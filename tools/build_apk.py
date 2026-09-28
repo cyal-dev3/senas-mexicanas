@@ -54,6 +54,10 @@ def ensure_keystore(env):
     folder = ANDROID / "keystore"
     props = folder / "keystore.properties"
     if props.exists():
+        if not (folder / "miratek.jks").exists():
+            sys.exit("Falta la llave android/keystore/miratek.jks. Recupérala de tu respaldo. Si se perdió, "
+                     "borra keystore.properties para crear una nueva (los celulares tendrán que "
+                     "desinstalar la app anterior antes de instalar la nueva).")
         return
     folder.mkdir(exist_ok=True)
     password = secrets.token_urlsafe(18)

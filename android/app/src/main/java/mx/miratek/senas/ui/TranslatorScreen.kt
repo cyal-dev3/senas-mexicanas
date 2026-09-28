@@ -61,6 +61,7 @@ class TranslatorActions(
     val onSwitchCamera: () -> Unit = {},
     val onSettings: () -> Unit = {},
     val onLoadModel: () -> Unit = {},
+    val onRetryCamera: () -> Unit = {},
 )
 
 @Composable
@@ -71,11 +72,14 @@ fun TranslatorScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onLoadModel:
         TranslatorActions(
             onMode = vm::setMode, onDeleteLast = vm::deleteLast, onClear = vm::clearPhrase,
             onSpeak = vm::speakPhrase, onSwitchCamera = { vm.setFrontCamera(!vm.state.value.frontCamera) },
-            onSettings = onOpenSettings, onLoadModel = onLoadModel,
+            onSettings = onOpenSettings, onLoadModel = onLoadModel, onRetryCamera = vm::retryCamera,
         )
     }
     TranslatorContent(state, actions) {
-        CameraPreview(front = state.frontCamera, analyzer = vm.analyzer, onError = { }, modifier = Modifier.fillMaxSize())
+        CameraPreview(
+            front = state.frontCamera, analyzer = vm.analyzer, onError = vm::reportCameraError,
+            modifier = Modifier.fillMaxSize(), restartKey = state.cameraKey,
+        )
         HandOverlay(vm.hands, state.frontCamera, Modifier.fillMaxSize())
     }
 }
@@ -97,6 +101,9 @@ fun TranslatorContent(state: UiState, actions: TranslatorActions, camera: @Compo
             Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding()
                 .padding(horizontal = 12.dp, vertical = 12.dp),
         ) {
+            AnimatedVisibility(visible = state.cameraError != null, enter = fadeIn(), exit = fadeOut()) {
+                CameraErrorCard(state.cameraError.orEmpty(), actions.onRetryCamera)
+            }
             when {
                 state.loading -> Unit
                 state.model == null -> NoModelCard(actions.onLoadModel)
@@ -135,7 +142,7 @@ private fun TopBar(state: UiState, onSwitch: () -> Unit, onSettings: () -> Unit)
         }
         val visible = state.prediction?.handsVisible == true
         AnimatedVisibility(
-            visible = state.model != null && !visible,
+            visible = state.model != null && !visible && state.cameraError == null,
             enter = fadeIn() + slideInVertically(),
             exit = fadeOut() + slideOutVertically(),
         ) {
@@ -218,6 +225,17 @@ private fun hintFor(mode: String) = when (mode) {
     SignInfo.CATEGORY_LETTERS -> "Mantén cada letra un segundo. Baja las manos para terminar la palabra."
     SignInfo.CATEGORY_NUMBERS -> "Para 23 haz 20 y luego 3 (o 2 y luego 3). Baja las manos al terminar."
     else -> "Haz la seña completa y regresa las manos a reposo."
+}
+
+@Composable
+private fun CameraErrorCard(message: String, onRetry: () -> Unit) {
+    GlassCard(Modifier.fillMaxWidth().padding(bottom = 12.dp), borderColor = Mira.Amber) {
+        Overline("Cámara", Mira.Amber)
+        VSpace(6.dp)
+        Text(message, style = MaterialTheme.typography.bodyMedium, color = Mira.Text)
+        VSpace(12.dp)
+        SecondaryButton("Reintentar", onRetry, Modifier.fillMaxWidth(), MiraIcons.FlipCamera)
+    }
 }
 
 @Composable

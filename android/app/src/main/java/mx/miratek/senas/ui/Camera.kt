@@ -36,7 +36,13 @@ private val TIPS = setOf(4, 8, 12, 16, 20)
 
 /** Vista de la camara con CameraX: vista previa + analisis de manos. */
 @Composable
-fun CameraPreview(front: Boolean, analyzer: ImageAnalysis.Analyzer, onError: (String) -> Unit, modifier: Modifier = Modifier) {
+fun CameraPreview(
+    front: Boolean,
+    analyzer: ImageAnalysis.Analyzer,
+    onError: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    restartKey: Int = 0,
+) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val previewView = remember {
@@ -47,9 +53,11 @@ fun CameraPreview(front: Boolean, analyzer: ImageAnalysis.Analyzer, onError: (St
         }
     }
     val executor = remember { Executors.newSingleThreadExecutor() }
+    // Se declara antes que la camara: al salir, primero se suelta la camara y luego el hilo
+    DisposableEffect(Unit) { onDispose { executor.shutdown() } }
     AndroidView(factory = { previewView }, modifier = modifier)
 
-    DisposableEffect(front) {
+    DisposableEffect(front, restartKey) {
         val future = ProcessCameraProvider.getInstance(context)
         var provider: ProcessCameraProvider? = null
         future.addListener({

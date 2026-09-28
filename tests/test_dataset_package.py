@@ -74,3 +74,33 @@ def test_single_hand_keeps_slot_when_label_flips():
     assert far.present[LEFT]
     assert not assign_slots([], previous=prev).any
     assert not empty_hands().any
+
+
+def test_rejects_empty_or_broken_clips_and_bad_manifests(store, tmp_path):
+    import io
+    import json
+
+    def npz_bytes(n):
+        buf = io.BytesIO()
+        arr = np.zeros((n, 2, 21, 3), np.float32)
+        np.savez(buf, image=arr, world=arr, t=np.arange(n, dtype=np.float32), meta=np.array("{}"))
+        return buf.getvalue()
+
+    pkg = tmp_path / "raro.zip"
+    with zipfile.ZipFile(pkg, "w") as zf:
+        zf.writestr("manifest.json", json.dumps({"format": 1, "signers": ["no", "es", "dict"]}))
+        zf.writestr("clips/ana-1/hola/000-vacio.npz", npz_bytes(0))
+        zf.writestr("clips/ana-1/hola/001-bueno.npz", npz_bytes(12))
+    result = import_package(store, pkg, tmp_path / "m")
+    assert result.added == 1 and result.skipped == 1
+
+    corrupt = tmp_path / "corrupto.zip"
+    corrupt.write_bytes(pkg.read_bytes()[:-40])  # descarga incompleta
+    with pytest.raises(PackageError):
+        import_package(store, corrupt, tmp_path / "m")
+
+    weird = tmp_path / "formato.zip"
+    with zipfile.ZipFile(weird, "w") as zf:
+        zf.writestr("manifest.json", json.dumps({"format": "uno"}))
+    with pytest.raises(PackageError):
+        import_package(store, weird, tmp_path / "m")

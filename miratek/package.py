@@ -13,6 +13,7 @@ import json
 import re
 import time
 import zipfile
+import zlib
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -28,6 +29,7 @@ ANDROID_MEMBER = "modelo/modelo_android.json"  # el mismo modelo, para el celula
 LOG_MEMBER = "diagnostico/miratek.log"
 _CLIP_RE = re.compile(r"^clips/([a-z0-9_-]{1,64})/([a-z0-9_-]{1,64})/([a-z0-9_-]{1,64})\.npz$")
 MAX_UNCOMPRESSED = 2 * 1024 ** 3  # 2 GB: proteccion contra archivos maliciosos
+MIN_FRAMES = 8                    # igual que al grabar
 
 
 class PackageError(Exception):
@@ -101,9 +103,30 @@ def import_package(store, zip_path, models_dir):
     """Junta las grabaciones del paquete con las nuestras (sin duplicados)."""
     result = ImportResult()
     result.manifest = read_manifest(zip_path)
-    if result.manifest.get("format", 0) > PACKAGE_FORMAT:
+    if not isinstance(result.manifest, dict):
+        raise PackageError("Este archivo no es un paquete de Mira&Tek.")
+    try:
+        version = int(result.manifest.get("format", 0))
+    except (TypeError, ValueError):
+        raise PackageError("Este archivo no es un paquete de Mira&Tek.") from None
+    if version > PACKAGE_FORMAT:
         raise PackageError("Este archivo es de una versión más nueva de la app. Actualiza la app.")
+    try:
+        _copy_members(store, zip_path, models_dir, result)
+    except (zipfile.BadZipFile, zlib.error, EOFError, KeyError) as exc:
+        raise PackageError("El archivo está dañado (quizá no terminó de descargarse). "
+                           f"Se agregaron {result.added} grabaciones antes del error.") from exc
 
+    names = result.manifest.get("signers", {})
+    if isinstance(names, dict):
+        known = store.signer_names()
+        for signer_id, name in names.items():
+            if is_safe_id(signer_id) and isinstance(name, str) and signer_id not in known:
+                store.set_signer_name(signer_id, name[:40])
+    return result
+
+
+def _copy_members(store, zip_path, models_dir, result):
     with zipfile.ZipFile(zip_path) as zf:
         members = zf.infolist()
         if sum(m.file_size for m in members) > MAX_UNCOMPRESSED:
@@ -134,14 +157,6 @@ def import_package(store, zip_path, models_dir):
                 result.model_path = target
             # Cualquier otro archivo se ignora (no extraemos nada inesperado)
 
-    names = result.manifest.get("signers", {})
-    for signer_id, name in names.items():
-        if is_safe_id(signer_id) and isinstance(name, str):
-            known = store.signer_names()
-            if signer_id not in known:
-                store.set_signer_name(signer_id, name[:40])
-    return result
-
 
 def _valid_clip(data):
     """Revisa que el clip se pueda leer y tenga la forma correcta."""
@@ -150,7 +165,8 @@ def _valid_clip(data):
         with np.load(io.BytesIO(data), allow_pickle=False) as npz:
             image, world, t = npz["image"], npz["world"], npz["t"]
             json.loads(str(npz["meta"]))
-            return (image.ndim == 4 and image.shape[1:] == (2, 21, 3)
-                    and world.shape == image.shape and t.shape == (image.shape[0],))
+            return (image.ndim == 4 and image.shape[1:] == (2, 21, 3) and image.shape[0] >= MIN_FRAMES
+                    and world.shape == image.shape and t.shape == (image.shape[0],)
+                    and bool(np.isfinite(t).all()) and bool((np.diff(t) >= 0).all()))
     except Exception:
         return False

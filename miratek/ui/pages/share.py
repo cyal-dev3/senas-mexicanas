@@ -1,5 +1,6 @@
 """Compartir: crear el archivo para enviar y abrir archivos de otras personas."""
 
+import logging
 import os
 import subprocess
 import sys
@@ -195,8 +196,13 @@ class SharePage(Page):
         for f in files:
             try:
                 result = import_package(self.ctx.store, f, self.ctx.models_dir)
-            except (PackageError, OSError) as exc:
+            except PackageError as exc:
                 self.ctx.toast(f"{os.path.basename(f)}: {exc}", "error")
+                self.ctx.data_changed.emit()  # pudo agregar algunas antes del error
+                continue
+            except Exception:
+                logging.getLogger(__name__).exception("No se pudo importar %s", f)
+                self.ctx.toast(f"{os.path.basename(f)}: no pude abrir este archivo.", "error")
                 continue
             added += result.added
             skipped += result.skipped

@@ -40,6 +40,7 @@ data class UiState(
     val autoSpeak: Boolean = true,
     val frontCamera: Boolean = true,
     val cameraError: String? = null,
+    val cameraKey: Int = 0,           // cambia para volver a abrir la camara
     val hasUserModel: Boolean = false,
     val hasBundledModel: Boolean = false,
 )
@@ -153,6 +154,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(frontCamera = front) }
     }
 
+    fun reportCameraError(message: String) {
+        _state.update { it.copy(cameraError = message) }
+    }
+
+    fun retryCamera() {
+        synchronized(lock) { recognizer?.reset() }
+        _state.update { it.copy(cameraError = null, cameraKey = it.cameraKey + 1) }
+    }
+
     fun speakPhrase() {
         val text = synchronized(lock) { phrase.sentence() }
         if (text.isBlank()) message("Todavía no hay nada que leer.") else speaker.speak(text)
@@ -178,6 +188,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 message(e.message ?: "Ese archivo no sirve.")
             } catch (e: Exception) {
                 message("No pude cargar el archivo.")
+            } catch (e: OutOfMemoryError) {
+                message("El archivo es demasiado grande para este teléfono.")
             }
         }
     }

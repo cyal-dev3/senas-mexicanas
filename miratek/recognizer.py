@@ -102,7 +102,7 @@ class LiveRecognizer:
         if span < 0.5 * self.model.window_s:
             return None, None  # todavia no hay suficiente historia
 
-        times = np.array([f[0] for f in self._frames], np.float32)
+        times = np.array([f[0] for f in self._frames], np.float64)  # float32 pierde precision
         image = np.stack([f[1] for f in self._frames])
         world = np.stack([f[2] for f in self._frames])
         feats = window_features(image, world, times, self.aspect, self.model.window_s, t_end=t)

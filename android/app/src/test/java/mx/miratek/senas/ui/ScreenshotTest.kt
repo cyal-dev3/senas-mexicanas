@@ -88,6 +88,15 @@ class ScreenshotTest {
     }
 
     @Test
+    fun translatorCameraError() {
+        val state = UiState(
+            loading = false, model = model,
+            cameraError = "No pude abrir la cámara. Cierra otras apps que la usen e intenta de nuevo.",
+        )
+        paparazzi.snapshot { MiraTekTheme { TranslatorContent(state, TranslatorActions()) { FakeCamera() } } }
+    }
+
+    @Test
     fun settings() {
         val state = UiState(loading = false, model = model, hasUserModel = true, hasBundledModel = true)
         paparazzi.snapshot { MiraTekTheme { SettingsContent(state, SettingsActions()) } }

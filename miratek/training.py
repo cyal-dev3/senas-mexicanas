@@ -274,7 +274,9 @@ def train_from_store(store, cfg=None, progress=None, should_cancel=None):
     usable = [r for r in refs if r.sign_id in classes]
     for i, ref in enumerate(usable):
         try:
-            clips.append(store.load(ref))
+            clip = store.load(ref)
+            if len(clip.t) >= 2:
+                clips.append(clip)
         except Exception:
             pass  # un clip danado no debe tumbar todo el entrenamiento
         if i % 25 == 0:

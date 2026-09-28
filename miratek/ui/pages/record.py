@@ -346,6 +346,19 @@ class RecordPage(Page):
             self.s_status.setText(text)
             self.s_status.setStyleSheet(f"color: {color}; font-size: 17px; font-weight: 600;")
 
+    def _countdown_when_ready(self, first=True):
+        """Empieza la cuenta regresiva, o espera si la camara no esta lista."""
+        if self.ctx.camera.state == "running":
+            self._begin_countdown(first)
+        else:
+            self.state = WAIT_CAMERA
+            self.rec_buttons.show()
+            self.done_buttons.hide()
+            self.video.set_state("error" if self.ctx.camera.state == "error" else "starting",
+                                 self.ctx.camera.message or "Encendiendo la cámara…")
+            if self.ctx.camera.state in ("error", "stopped"):
+                self.ctx.camera.restart()
+
     def _begin_countdown(self, first):
         self.state = COUNTDOWN
         self._first = first
@@ -484,12 +497,12 @@ class RecordPage(Page):
         self._count = self.ctx.signer_counts().get(nxt.id, 0)
         self._update_panel()
         self.set_titles(f"Grabando: {nxt.name}")
-        self._begin_countdown(first=True)
+        self._countdown_when_ready(first=True)
 
     def _record_more(self):
         self._goal = self._count + 5
         self._update_panel()
-        self._begin_countdown(first=True)
+        self._countdown_when_ready(first=True)
 
     def _toggle_pause(self):
         if self.state in (COUNTDOWN, RECORDING):
@@ -498,7 +511,7 @@ class RecordPage(Page):
             self.pause_btn.setText("Continuar")
             self.pause_btn.setIcon(theme.glyph_icon("play", theme.TEXT_2, 18))
         elif self.state == PAUSED:
-            self._begin_countdown(first=True)
+            self._countdown_when_ready(first=True)
 
     def _undo(self):
         if self.state == IDLE or not self.session_saved:

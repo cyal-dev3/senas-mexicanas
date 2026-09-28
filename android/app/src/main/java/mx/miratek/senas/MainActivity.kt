@@ -52,12 +52,13 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge(
             navigationBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
         )
-        handleIntent(intent)
+        if (savedInstanceState == null) handleIntent(intent)
         setContent { MiraTekTheme { App(vm) } }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         handleIntent(intent)
     }
 

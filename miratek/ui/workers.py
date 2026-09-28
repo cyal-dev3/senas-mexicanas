@@ -51,11 +51,13 @@ class CameraWorker(QThread):
                 from ..hands import HandDetector
                 detector = HandDetector()
         except CameraError as exc:
+            self._release()
             self.status.emit("error", str(exc))
             return
         except Exception:
-            log.exception("No se pudo iniciar la camara")
-            self.status.emit("error", CAMERA_HELP)
+            log.exception("No se pudo iniciar la camara o el detector")
+            self._release()
+            self.status.emit("error", "No pude preparar la cámara o el detector de manos. Intenta de nuevo.")
             return
 
         self.status.emit("running", "")
@@ -85,7 +87,14 @@ class CameraWorker(QThread):
         finally:
             if detector is not None:
                 detector.close()
-            self.source.release()
+            self._release()
+
+    def _release(self):
+        if self.source is not None:
+            try:
+                self.source.release()
+            except Exception:
+                log.exception("No se pudo liberar la camara")
 
 
 class CameraController(QObject):

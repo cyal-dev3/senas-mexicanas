@@ -4,8 +4,10 @@ import android.content.Context
 import android.net.Uri
 import mx.miratek.senas.core.ModelFormatException
 import mx.miratek.senas.core.SignModel
-import java.io.ByteArrayInputStream
+import java.io.BufferedInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.InputStream
 import java.util.zip.ZipInputStream
 
 /**
@@ -32,14 +34,13 @@ class ModelRepository(private val context: Context) {
 
     /** Carga un modelo desde un archivo .json (o un .zip de la app de PC). */
     fun import(uri: Uri): SignModel {
-        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            ?: throw ModelFormatException("No pude abrir el archivo.")
-        if (bytes.size > MAX_BYTES) throw ModelFormatException("El archivo es demasiado grande.")
-        val text = if (bytes.size > 2 && bytes[0] == 'P'.code.toByte() && bytes[1] == 'K'.code.toByte()) {
-            fromZip(bytes)
-        } else {
-            bytes.toString(Charsets.UTF_8)
-        }
+        val text = context.contentResolver.openInputStream(uri)?.use { raw ->
+            val input = BufferedInputStream(raw)
+            input.mark(4)
+            val isZip = input.read() == 'P'.code && input.read() == 'K'.code
+            input.reset()
+            if (isZip) fromZip(input) else readLimited(input)
+        } ?: throw ModelFormatException("No pude abrir el archivo.")
         val model = SignModel.fromJson(text)  // valida antes de guardar
         val tmp = File(context.filesDir, "modelo.json.tmp")
         tmp.writeText(text)
@@ -54,12 +55,27 @@ class ModelRepository(private val context: Context) {
         userFile.delete()
     }
 
-    private fun fromZip(bytes: ByteArray): String {
-        ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
+    /** Lee texto sin pasar de MAX_MODEL_BYTES (un modelo pesa 1-2 MB). */
+    private fun readLimited(input: InputStream): String {
+        val out = ByteArrayOutputStream()
+        val buffer = ByteArray(64 * 1024)
+        var total = 0L
+        while (true) {
+            val n = input.read(buffer)
+            if (n < 0) break
+            total += n
+            if (total > MAX_MODEL_BYTES) throw ModelFormatException("Este archivo no parece un modelo de Mira&Tek.")
+            out.write(buffer, 0, n)
+        }
+        return out.toString(Charsets.UTF_8.name())
+    }
+
+    private fun fromZip(input: InputStream): String {
+        ZipInputStream(input).use { zip ->
             while (true) {
                 val entry = zip.nextEntry ?: break
                 if (entry.name == ZIP_MEMBER || entry.name.endsWith("modelo_android.json")) {
-                    return zip.readBytes().toString(Charsets.UTF_8)
+                    return readLimited(zip)
                 }
             }
         }
@@ -69,6 +85,6 @@ class ModelRepository(private val context: Context) {
     companion object {
         const val BUNDLED = "modelo_android.json"
         const val ZIP_MEMBER = "modelo/modelo_android.json"
-        const val MAX_BYTES = 200L * 1024 * 1024
+        const val MAX_MODEL_BYTES = 50L * 1024 * 1024
     }
 }
