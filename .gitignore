@@ -179,3 +179,13 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+# ---- Mira&Tek ----
+# Android: builds, cache y la llave de firma (NO subirla a GitHub; guardarla aparte)
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/keystore/
+android/app/src/main/assets/modelo_android.json
+# PyInstaller (la spec se genera desde build_exe.py)
+capturas/
