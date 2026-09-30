@@ -192,3 +192,4 @@ capturas/
 
 # Grabaciones recibidas (datos personales: no se suben a GitHub)
 recordings/
+android/app/src/main/assets/learn_clips.json

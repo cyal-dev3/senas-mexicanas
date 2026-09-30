@@ -7,8 +7,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -27,6 +26,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -46,7 +47,7 @@ import mx.miratek.senas.MainViewModel
 import mx.miratek.senas.UiState
 import mx.miratek.senas.core.SignInfo
 
-private val MODES = listOf(
+val MODES = listOf(
     SignInfo.CATEGORY_WORDS to "Palabras",
     SignInfo.CATEGORY_LETTERS to "Deletreo",
     SignInfo.CATEGORY_NUMBERS to "Números",
@@ -59,20 +60,19 @@ class TranslatorActions(
     val onClear: () -> Unit = {},
     val onSpeak: () -> Unit = {},
     val onSwitchCamera: () -> Unit = {},
-    val onSettings: () -> Unit = {},
     val onLoadModel: () -> Unit = {},
     val onRetryCamera: () -> Unit = {},
 )
 
 @Composable
-fun TranslatorScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onLoadModel: () -> Unit) {
+fun TranslatorScreen(vm: MainViewModel, onLoadModel: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     StatusBarIcons(light = true)
     val actions = remember(vm) {
         TranslatorActions(
             onMode = vm::setMode, onDeleteLast = vm::deleteLast, onClear = vm::clearPhrase,
             onSpeak = vm::speakPhrase, onSwitchCamera = { vm.setFrontCamera(!vm.state.value.frontCamera) },
-            onSettings = onOpenSettings, onLoadModel = onLoadModel, onRetryCamera = vm::retryCamera,
+            onLoadModel = onLoadModel, onRetryCamera = vm::retryCamera,
         )
     }
     TranslatorContent(state, actions) {
@@ -84,84 +84,107 @@ fun TranslatorScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onLoadModel:
     }
 }
 
+/**
+ * La camara ocupa casi toda la pantalla para que te veas completo haciendo las
+ * senas: arriba van el modo y lo que la app esta viendo; abajo, solo una barra
+ * delgada con la frase.
+ */
 @Composable
 fun TranslatorContent(state: UiState, actions: TranslatorActions, camera: @Composable BoxScope.() -> Unit) {
     Box(Modifier.fillMaxSize().background(Mira.Ink)) {
         camera()
-
-        // Sombra suave arriba para que la barra se distinga sobre cualquier fondo
         Box(
-            Modifier.fillMaxWidth().height(140.dp)
-                .background(Brush.verticalGradient(listOf(Mira.Ink.copy(alpha = 0.35f), Color.Transparent)))
+            Modifier.fillMaxWidth().height(150.dp)
+                .background(Brush.verticalGradient(listOf(Mira.Ink.copy(alpha = 0.45f), Color.Transparent)))
         )
 
-        TopBar(state, onSwitch = actions.onSwitchCamera, onSettings = actions.onSettings)
+        Column(Modifier.statusBarsPadding().padding(horizontal = 14.dp, vertical = 8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                LogoPill(state)
+                Spacer(Modifier.weight(1f))
+                IconCircleButton(MiraIcons.FlipCamera, "Cambiar de cámara", actions.onSwitchCamera,
+                    tint = Mira.Text, background = Mira.Surface.copy(alpha = 0.92f), size = 42.dp)
+            }
+            if (state.model != null) {
+                Spacer(Modifier.height(10.dp))
+                SegmentedPills(MODES, state.mode, actions.onMode,
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Mira.Surface.copy(alpha = 0.9f)))
+                Spacer(Modifier.height(10.dp))
+                GuessPill(state, Modifier.align(Alignment.CenterHorizontally))
+            }
+        }
 
-        Column(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding()
-                .padding(horizontal = 12.dp, vertical = 12.dp),
-        ) {
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp)) {
             AnimatedVisibility(visible = state.cameraError != null, enter = fadeIn(), exit = fadeOut()) {
                 CameraErrorCard(state.cameraError.orEmpty(), actions.onRetryCamera)
             }
             when {
                 state.loading -> Unit
                 state.model == null -> NoModelCard(actions.onLoadModel)
-                else -> BottomPanel(state, actions)
+                else -> SubtitleBar(state, actions)
             }
         }
     }
 }
 
 @Composable
-private fun TopBar(state: UiState, onSwitch: () -> Unit, onSettings: () -> Unit) {
-    Column(Modifier.statusBarsPadding().padding(horizontal = 18.dp, vertical = 10.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Row(
-                Modifier.clip(RoundedCornerShape(24.dp))
-                    .background(Mira.Surface.copy(alpha = 0.94f)).padding(start = 6.dp, end = 16.dp, top = 6.dp, bottom = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Logo(38.dp)
-                Spacer(Modifier.width(10.dp))
-                Column {
-                    Text("Mira&Tek", color = Mira.Text, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                    val signs = state.model?.signs?.count { !it.isNothing } ?: 0
-                    Text(
-                        if (state.model != null) "Modelo listo · $signs señas" else "Sin modelo",
-                        color = if (state.model != null) Mira.Text2 else Mira.Amber, fontSize = 12.sp,
-                    )
-                }
-            }
-            Spacer(Modifier.weight(1f))
-            IconCircleButton(MiraIcons.FlipCamera, "Cambiar de cámara", onSwitch,
-                tint = Mira.Text, background = Mira.Surface.copy(alpha = 0.94f))
+private fun LogoPill(state: UiState) {
+    Row(
+        Modifier.clip(RoundedCornerShape(22.dp)).background(Mira.Surface.copy(alpha = 0.92f))
+            .padding(start = 5.dp, end = 14.dp, top = 5.dp, bottom = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Logo(32.dp)
+        Spacer(Modifier.width(8.dp))
+        Column {
+            Text("Mira&Tek", color = Mira.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            val signs = state.model?.signs?.count { !it.isNothing } ?: 0
+            Text(
+                if (state.model != null) "$signs señas" else "Sin modelo",
+                color = if (state.model != null) Mira.Text2 else Mira.Amber, fontSize = 11.sp,
+            )
+        }
+    }
+}
+
+/** Lo que la app esta viendo ahora (o un aviso si no ve tus manos). */
+@Composable
+fun GuessPill(state: UiState, modifier: Modifier = Modifier) {
+    val prediction = state.prediction
+    val handsVisible = prediction?.handsVisible == true && state.cameraError == null
+    val sign = prediction?.sign
+    Row(
+        modifier.clip(RoundedCornerShape(24.dp)).background(Mira.Surface.copy(alpha = 0.93f))
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (!handsVisible) {
+            Box(Modifier.size(8.dp).clip(CircleShape).background(Mira.Amber))
+            Spacer(Modifier.width(8.dp))
+            Text("Muestra tus manos a la cámara", color = Mira.Text, fontSize = 14.sp)
+        } else {
+            val conf = (prediction?.confidence ?: 0.0).toFloat()
+            val sure = conf >= state.sensitivity.threshold && sign?.isNothing == false
+            ConfidenceRing(conf, if (sure) Mira.Green else Mira.Amber, 30.dp)
             Spacer(Modifier.width(10.dp))
-            IconCircleButton(MiraIcons.Settings, "Ajustes", onSettings,
-                tint = Mira.Text, background = Mira.Surface.copy(alpha = 0.94f))
-        }
-        val visible = state.prediction?.handsVisible == true
-        AnimatedVisibility(
-            visible = state.model != null && !visible && state.cameraError == null,
-            enter = fadeIn() + slideInVertically(),
-            exit = fadeOut() + slideOutVertically(),
-        ) {
-            Row(
-                Modifier.padding(top = 12.dp).clip(RoundedCornerShape(16.dp))
-                    .background(Mira.Surface.copy(alpha = 0.94f)).padding(horizontal = 14.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.size(8.dp).clip(CircleShape).background(Mira.Amber))
-                Spacer(Modifier.width(8.dp))
-                Text("Muestra tus manos a la cámara", color = Mira.Text, fontSize = 13.sp)
+            val text = if (sign == null || sign.isNothing) "…" else sign.name
+            AnimatedContent(
+                targetState = text,
+                transitionSpec = { (fadeIn(tween(160)) + slideInVertically { it / 3 }) togetherWith fadeOut(tween(100)) },
+                label = "guess",
+            ) { value ->
+                Text(value, color = Mira.Text, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis)
             }
+            Spacer(Modifier.width(8.dp))
+            Text("${(conf * 100).toInt()}%", color = Mira.Text2, fontSize = 13.sp)
         }
     }
 }
 
+/** Barra delgada: la frase y sus botones. Destella cuando se confirma una sena. */
 @Composable
-private fun BottomPanel(state: UiState, actions: TranslatorActions) {
-    // Destello del borde cada vez que se confirma una sena
+private fun SubtitleBar(state: UiState, actions: TranslatorActions) {
     val glow = remember { Animatable(0f) }
     LaunchedEffect(state.eventCount) {
         if (state.eventCount > 0) {
@@ -169,66 +192,28 @@ private fun BottomPanel(state: UiState, actions: TranslatorActions) {
             glow.animateTo(0f, tween(700))
         }
     }
-    val border = androidx.compose.ui.graphics.lerp(Mira.Border, Mira.Warm, glow.value)
-
-    GlassCard(Modifier.fillMaxWidth(), borderColor = border) {
-        SegmentedPills(MODES, state.mode, actions.onMode, Modifier.fillMaxWidth())
-        VSpace(18.dp)
-        val prediction = state.prediction
-        val handsVisible = prediction?.handsVisible == true
-        val sign = prediction?.sign
-        val text = when {
-            !handsVisible -> "—"
-            sign == null || sign.isNothing -> "…"
-            else -> sign.name
+    Surface(
+        shape = RoundedCornerShape(26.dp),
+        color = Mira.Surface.copy(alpha = 0.94f),
+        border = BorderStroke(if (glow.value > 0.05f) 2.dp else 1.dp, lerp(Mira.Border, Mira.Warm, glow.value)),
+        shadowElevation = 6.dp,
+    ) {
+        Row(
+            Modifier.padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            PhraseChips(state.phrase, Modifier.weight(1f))
+            IconCircleButton(MiraIcons.Speaker, "Leer en voz alta", actions.onSpeak, tint = Color.White,
+                background = Mira.Accent, size = 42.dp)
+            IconCircleButton(MiraIcons.Backspace, "Borrar lo último", actions.onDeleteLast, tint = Mira.Text2, size = 42.dp)
+            IconCircleButton(MiraIcons.Close, "Borrar todo", actions.onClear, tint = Mira.Text2, size = 42.dp)
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Overline("Estoy viendo")
-                AnimatedContent(
-                    targetState = text,
-                    transitionSpec = {
-                        (fadeIn(tween(180)) + slideInVertically { it / 3 }) togetherWith fadeOut(tween(120))
-                    },
-                    label = "sign",
-                ) { value ->
-                    Text(
-                        value, color = Mira.Text, fontSize = if (value.length > 10) 32.sp else 42.sp,
-                        fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-            val conf = if (handsVisible) (prediction?.confidence ?: 0.0).toFloat() else 0f
-            val sure = conf >= state.sensitivity.threshold
-            ConfidenceRing(conf, if (sure) Mira.Green else Mira.Amber, 66.dp,
-                if (handsVisible) "${(conf * 100).toInt()}%" else "")
-        }
-        VSpace(6.dp)
-        Text(
-            hintFor(state.mode), color = Mira.Text3, fontSize = 12.sp,
-        )
-        VSpace(12.dp)
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Overline("Frase")
-            Spacer(Modifier.weight(1f))
-            IconCircleButton(MiraIcons.Backspace, "Borrar lo último", actions.onDeleteLast, tint = Mira.Text2, size = 38.dp)
-            IconCircleButton(MiraIcons.Close, "Borrar todo", actions.onClear, tint = Mira.Text2, size = 38.dp)
-        }
-        VSpace(8.dp)
-        PhraseChips(state.phrase, Modifier.fillMaxWidth())
-        VSpace(16.dp)
-        PrimaryButton("Leer en voz alta", actions.onSpeak, Modifier.fillMaxWidth(), MiraIcons.Speaker)
     }
 }
 
-private fun hintFor(mode: String) = when (mode) {
-    SignInfo.CATEGORY_LETTERS -> "Mantén cada letra un segundo. Baja las manos para terminar la palabra."
-    SignInfo.CATEGORY_NUMBERS -> "Para 23 haz 20 y luego 3 (o 2 y luego 3). Baja las manos al terminar."
-    else -> "Haz la seña completa y regresa las manos a reposo."
-}
-
 @Composable
-private fun CameraErrorCard(message: String, onRetry: () -> Unit) {
+fun CameraErrorCard(message: String, onRetry: () -> Unit) {
     GlassCard(Modifier.fillMaxWidth().padding(bottom = 12.dp), borderColor = Mira.Amber) {
         Overline("Cámara", Mira.Amber)
         VSpace(6.dp)

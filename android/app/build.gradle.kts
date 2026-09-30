@@ -60,11 +60,12 @@ android {
     testOptions { unitTests.isReturnDefaultValues = true }
 }
 
-// El detector de manos (assets/hand_landmarker.task) vive en la raiz del repo y lo
-// comparten la PC y el celular: Gradle lo copia a la APK en cada compilacion.
+// El detector de manos y las instrucciones de las senas viven en assets/ (raiz del
+// repo) y los comparten la PC y el celular: Gradle los copia a la APK al compilar.
 val handModelDir = layout.buildDirectory.dir("generated/miratek-assets")
 val copyHandModel by tasks.registering(Copy::class) {
     from(rootProject.file("../assets/hand_landmarker.task"))
+    from(rootProject.file("../assets/senas_info.json"))  // como se hace cada sena (Aprender)
     into(handModelDir)
 }
 android.sourceSets.getByName("main").assets.srcDir(handModelDir)

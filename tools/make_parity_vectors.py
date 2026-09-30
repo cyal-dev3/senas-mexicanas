@@ -97,7 +97,7 @@ def phrase_cases():
         ["num_20", "num_3", "|", "num_10", "num_6", "|", "num_1", "num_0", "num_0"],
         ["num_7", "num_20", "num_30", "num_15", "num_2"],
         ["letra_enie", "letra_o", "nada", "letra_s", "|", "hola"],
-        ["num_2", "num_3", "num_4", "num_5"],
+        ["num_100", "num_20", "num_5", "num_2", "|", "num_100", "num_15", "num_16"],
     ]
     out = []
     for seq in sequences:

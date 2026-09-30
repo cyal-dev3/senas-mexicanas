@@ -326,7 +326,8 @@ class RecordPage(Page):
         self.s_name.setStyleSheet(f"font-size: {72 if big else 40}px; font-weight: 700;"
                                   "font-family: 'Segoe UI Variable Display', 'Segoe UI';")
         self.s_name.setText(self.sign.name)
-        self.s_hint.setText(self.sign.hint)
+        how = config.sign_instructions(self.sign.id)
+        self.s_hint.setText(how + "\n\n" + self.sign.hint if how else self.sign.hint)
         self.s_tip.setText(self._tip())
         self.s_clips.setText(f"CLIP {min(self._count + 1, self._goal)} DE {self._goal}")
         self.dots.set(self._count, self._goal)

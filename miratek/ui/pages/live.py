@@ -4,7 +4,7 @@ Prueba en vivo: la camara reconoce senas y arma frases.
 Tres modos (cada uno solo "compite" contra su categoria):
   - Palabras: cada sena reconocida se agrega como una palabra.
   - Deletreo: las letras se juntan en una palabra (H-O-L-A -> HOLA).
-  - Numeros: se arman numeros del 0 al 100 (20 + 3 = 23; 1-0-0 = 100).
+  - Numeros: como en LSM (20 y 3 = 23; 100, 20 y 5 = 125).
 Bajar las manos (o hacer "Nada") termina la palabra o el numero.
 """
 
@@ -174,7 +174,7 @@ class LivePage(Page):
             self.hint.setText({
                 config.WORDS: "Haz la seña completa y regresa las manos a reposo.",
                 config.LETTERS: "Mantén cada letra un segundo. Baja las manos para terminar la palabra.",
-                config.NUMBERS: "Para 23 haz 20 y luego 3 (o 2 y luego 3). Baja las manos al terminar.",
+                config.NUMBERS: "Para 23 haz 20 y luego 3; para 125, haz 100, 20 y 5. Baja las manos al terminar.",
             }[self.mode])
             self.recognizer.set_allowed(wanted)
 

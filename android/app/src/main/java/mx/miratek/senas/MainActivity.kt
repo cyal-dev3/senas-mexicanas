@@ -14,13 +14,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
@@ -38,11 +33,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.compose.foundation.layout.Column
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import mx.miratek.senas.ui.BottomNav
+import mx.miratek.senas.ui.LearnScreen
 import mx.miratek.senas.ui.Mira
 import mx.miratek.senas.ui.MiraTekTheme
 import mx.miratek.senas.ui.PermissionScreen
+import mx.miratek.senas.ui.PracticeScreen
+import mx.miratek.senas.ui.ProfileScreen
 import mx.miratek.senas.ui.SettingsScreen
+import mx.miratek.senas.ui.SignDetailScreen
+import mx.miratek.senas.ui.Tab
 import mx.miratek.senas.ui.TranslatorScreen
+import mx.miratek.senas.ui.learnList
 
 class MainActivity : ComponentActivity() {
     private val vm: MainViewModel by viewModels()
@@ -77,8 +81,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Screen { TRANSLATOR, SETTINGS }
-
 @Composable
 private fun App(vm: MainViewModel) {
     val context = LocalContext.current
@@ -97,9 +99,17 @@ private fun App(vm: MainViewModel) {
     }
     val openPicker = { picker.launch(arrayOf("application/json", "application/zip", "application/octet-stream", "text/plain")) }
 
-    var screen by rememberSaveable { mutableStateOf(Screen.TRANSLATOR) }
+    val state by vm.state.collectAsStateWithLifecycle()
+    var tab by rememberSaveable { mutableStateOf(Tab.TRANSLATE) }
+    var detail by rememberSaveable { mutableStateOf<String?>(null) }   // sena abierta en "Aprender"
+    val practicing = state.practiceTarget
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(Unit) { vm.messages.collect { snackbar.showSnackbar(it) } }
+
+    fun selectTab(new: Tab) {
+        if (practicing != null) vm.stopPractice()
+        tab = new
+    }
 
     Box(Modifier.fillMaxSize()) {
         if (!granted) {
@@ -113,18 +123,48 @@ private fun App(vm: MainViewModel) {
                 },
             )
         } else {
-            AnimatedContent(screen, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "screen") { s ->
-                when (s) {
-                    Screen.TRANSLATOR -> TranslatorScreen(vm, onOpenSettings = { screen = Screen.SETTINGS }, onLoadModel = openPicker)
-                    Screen.SETTINGS -> SettingsScreen(vm, onBack = { screen = Screen.TRANSLATOR }, onLoadModel = openPicker)
+            Column(Modifier.fillMaxSize()) {
+                Box(Modifier.weight(1f)) {
+                    when (tab) {
+                        Tab.TRANSLATE -> TranslatorScreen(vm, onLoadModel = openPicker)
+                        Tab.LEARN -> when {
+                            practicing != null -> PracticeScreen(
+                                vm, state, practicing,
+                                onExit = { vm.stopPractice() },
+                                onNext = nextSign(state, practicing)?.let { next -> { detail = next; vm.startPractice(next) } },
+                            )
+                            detail != null -> SignDetailScreen(
+                                state, detail!!, onBack = { detail = null },
+                                onPractice = { vm.startPractice(it) }, onOpen = { detail = it },
+                            )
+                            else -> LearnScreen(state, onOpen = { detail = it })
+                        }
+                        Tab.PROFILE -> ProfileScreen(state, onRename = vm::setProfileName)
+                        Tab.SETTINGS -> SettingsScreen(vm, onBack = null, onLoadModel = openPicker)
+                    }
+                }
+                if (practicing == null) BottomNav(tab, ::selectTab)
+            }
+            BackHandler(enabled = practicing != null || detail != null || tab != Tab.TRANSLATE) {
+                when {
+                    practicing != null -> vm.stopPractice()
+                    tab == Tab.LEARN && detail != null -> detail = null
+                    else -> selectTab(Tab.TRANSLATE)
                 }
             }
-            BackHandler(enabled = screen == Screen.SETTINGS) { screen = Screen.TRANSLATOR }
         }
-        SnackbarHost(snackbar, Modifier.align(Alignment.TopCenter).padding(top = 90.dp).navigationBarsPadding()) { data ->
+        SnackbarHost(snackbar, Modifier.align(Alignment.TopCenter).padding(top = 90.dp)) { data ->
             Snackbar(containerColor = Mira.Ink, contentColor = androidx.compose.ui.graphics.Color.White) {
                 Text(data.visuals.message)
             }
         }
     }
+}
+
+/** La siguiente sena de la misma categoria que el modelo conoce (para practicar en serie). */
+private fun nextSign(state: UiState, current: String): String? {
+    val sign = state.learn.firstOrNull { it.id == current } ?: return null
+    val list = state.learnList(sign.category).filter { state.modelKnows(it.id) }
+    val index = list.indexOfFirst { it.id == current }
+    return list.getOrNull(index + 1)?.id
 }

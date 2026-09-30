@@ -1,0 +1,439 @@
+{
+ "version": 1,
+ "sources": {
+  "keysita": "Instrucciones de Keysita",
+  "sep": "Basado en el Diccionario de Lengua de Señas Mexicana «Manos con Voz» (SEP/CONAPRED)",
+  "mira": "Mira&Tek",
+  "pendiente": "Descripción pendiente: imita la animación y confírmala con alguien que sepa LSM"
+ },
+ "signs": {
+  "hola": {
+   "text": "",
+   "source": "pendiente",
+   "name": "Hola",
+   "category": "palabras"
+  },
+  "gracias": {
+   "text": "Coloca tu mano base plana con la palma hacia arriba y toca la palma con el dedo medio de tu otra mano haciendo un leve movimiento hacia arriba.",
+   "source": "keysita",
+   "name": "Gracias",
+   "category": "palabras"
+  },
+  "por_favor": {
+   "text": "Junta tus dos manos 🙏 a la altura de tu pecho.",
+   "source": "keysita",
+   "name": "Por favor",
+   "category": "palabras"
+  },
+  "si": {
+   "text": "Cierra tu mano en puño y levanta únicamente el pulgar, haciendo movimientos con él de arriba a abajo.",
+   "source": "keysita",
+   "name": "Sí",
+   "category": "palabras"
+  },
+  "no": {
+   "text": "Con el índice, el medio y el pulgar estirados, júntalos hasta que se toquen por las yemas.",
+   "source": "sep",
+   "name": "No",
+   "category": "palabras"
+  },
+  "ayuda": {
+   "text": "Mano base: coloca tu mano no dominante frente a ti, extendida y con la palma mirando hacia arriba. Mano dominante: configura tu mano dominante haciendo el puño en forma de la letra A (el puño cerrado con el pulgar apoyado a un lado). Colocación: apoya la parte lateral de la mano en \"A\" (el lado del dedo meñique) sobre la palma abierta de tu mano base.",
+   "source": "keysita",
+   "name": "Ayuda",
+   "category": "palabras"
+  },
+  "agua": {
+   "text": "Extiende el dedo índice de tu mano dominante y mantén los demás dedos doblados formando un puño suelto. Coloca tu mano cerca de la barbilla o a la altura de la boca y realiza un movimiento repetitivo con el dedo índice de arriba hacia abajo.",
+   "source": "keysita",
+   "name": "Agua",
+   "category": "palabras"
+  },
+  "comida": {
+   "text": "Junta las yemas de todos los dedos de tu mano dominante con el pulgar, formando una especie de \"conito\" o \"pinza\" con la mano. Llévala hacia la altura de la boca y haz un movimiento leve de adentro hacia afuera.",
+   "source": "keysita",
+   "name": "Comida",
+   "category": "palabras"
+  },
+  "bano": {
+   "text": "Configura tu mano con la letra B y después llévala a tu pecho; levemente muévela de arriba hacia abajo.",
+   "source": "keysita",
+   "name": "Baño",
+   "category": "palabras"
+  },
+  "doctor": {
+   "text": "",
+   "source": "pendiente",
+   "name": "Doctor",
+   "category": "palabras"
+  },
+  "familia": {
+   "text": "Se realiza configurando la mano dominante en la letra F (con el dedo índice y el pulgar tocándose por las puntas formando un círculo, y los otros tres dedos extendidos hacia arriba). La mano base se coloca al frente, usualmente en forma de puño cerrado o extendida boca abajo; posteriormente, la punta de los dedos de la mano en \"F\" hace un movimiento deslizándose a lo largo del brazo base, recorriéndolo desde el antebrazo o codo hacia la muñeca.",
+   "source": "keysita",
+   "alt": "Opción dos (si conoces el abecedario): pon tu mano dominante en forma de letra \"F\" (índice y pulgar tocándose) y deslízala sobre tu otro brazo, avanzando desde el codo hacia la muñeca.",
+   "name": "Familia",
+   "category": "palabras"
+  },
+  "amigo": {
+   "text": "Coloca la palma de una mano sobre el dorso de la otra.",
+   "source": "sep",
+   "name": "Amigo",
+   "category": "palabras"
+  },
+  "disculpa": {
+   "text": "",
+   "source": "pendiente",
+   "name": "Disculpa",
+   "category": "palabras"
+  },
+  "te_quiero": {
+   "text": "Coloca tu mano dominante en forma de letra \"C\" (con los dedos curvados hacia el frente) y tócala suavemente contra el pecho, del lado del corazón.",
+   "source": "keysita",
+   "name": "Te quiero",
+   "category": "palabras"
+  },
+  "letra_a": {
+   "text": "Cierra la mano mostrando las uñas y deja el pulgar estirado a un lado. La palma mira al frente.",
+   "source": "sep",
+   "name": "A",
+   "category": "abecedario"
+  },
+  "letra_b": {
+   "text": "Estira los dedos índice, medio, anular y meñique bien juntos y dobla el pulgar hacia la palma. La palma mira al frente.",
+   "source": "sep",
+   "name": "B",
+   "category": "abecedario"
+  },
+  "letra_c": {
+   "text": "Junta los cuatro dedos y cúrvalos, junto con el pulgar, como formando una C. La palma mira a un lado.",
+   "source": "sep",
+   "name": "C",
+   "category": "abecedario"
+  },
+  "letra_d": {
+   "text": "Une por las puntas los dedos medio, anular y meñique con el pulgar, y deja el índice estirado. La palma mira al frente.",
+   "source": "sep",
+   "name": "D",
+   "category": "abecedario"
+  },
+  "letra_e": {
+   "text": "Dobla todos los dedos por completo, mostrando las uñas. La palma mira al frente.",
+   "source": "sep",
+   "name": "E",
+   "category": "abecedario"
+  },
+  "letra_f": {
+   "text": "Con la mano abierta y los dedos juntos, dobla el índice hasta que su costado toque la yema del pulgar. La palma mira a un lado.",
+   "source": "sep",
+   "name": "F",
+   "category": "abecedario"
+  },
+  "letra_g": {
+   "text": "Cierra la mano y estira el índice y el pulgar. La palma mira hacia ti.",
+   "source": "sep",
+   "name": "G",
+   "category": "abecedario"
+  },
+  "letra_h": {
+   "text": "Cierra la mano y estira juntos el índice y el medio; el pulgar señala hacia arriba. La palma mira hacia ti.",
+   "source": "sep",
+   "name": "H",
+   "category": "abecedario"
+  },
+  "letra_i": {
+   "text": "Cierra la mano y estira el meñique señalando hacia arriba. La palma mira a un lado.",
+   "source": "sep",
+   "name": "I",
+   "category": "abecedario"
+  },
+  "letra_j": {
+   "text": "Con la mano cerrada y el meñique estirado hacia arriba, dibuja una J en el aire. La palma mira a un lado.",
+   "source": "sep",
+   "name": "J",
+   "category": "abecedario"
+  },
+  "letra_k": {
+   "text": "Cierra la mano estirando el índice, el medio y el pulgar, con la yema del pulgar entre el índice y el medio. Mueve la muñeca hacia arriba.",
+   "source": "sep",
+   "name": "K",
+   "category": "abecedario"
+  },
+  "letra_l": {
+   "text": "Cierra la mano y estira el índice y el pulgar formando una L. La palma mira al frente.",
+   "source": "sep",
+   "name": "L",
+   "category": "abecedario"
+  },
+  "letra_m": {
+   "text": "Cierra la mano y coloca los dedos índice, medio y anular sobre el pulgar.",
+   "source": "sep",
+   "name": "M",
+   "category": "abecedario"
+  },
+  "letra_n": {
+   "text": "Cierra la mano y coloca los dedos índice y medio sobre el pulgar.",
+   "source": "sep",
+   "name": "N",
+   "category": "abecedario"
+  },
+  "letra_enie": {
+   "text": "Haz la N (índice y medio sobre el pulgar) y mueve la muñeca de un lado a otro.",
+   "source": "sep",
+   "name": "Ñ",
+   "category": "abecedario"
+  },
+  "letra_o": {
+   "text": "Forma una O con la mano: todos los dedos se tocan por las puntas.",
+   "source": "sep",
+   "name": "O",
+   "category": "abecedario"
+  },
+  "letra_p": {
+   "text": "Cierra la mano estirando el índice, el medio y el pulgar, con la yema del pulgar entre el índice y el medio (como la K, pero sin movimiento).",
+   "source": "sep",
+   "name": "P",
+   "category": "abecedario"
+  },
+  "letra_q": {
+   "text": "Cierra la mano y pon el índice y el pulgar en forma de garra, con la palma hacia abajo. Mueve la muñeca de un lado a otro.",
+   "source": "sep",
+   "name": "Q",
+   "category": "abecedario"
+  },
+  "letra_r": {
+   "text": "Cierra la mano y estira el índice y el medio entrelazados (cruzados). La palma mira al frente.",
+   "source": "sep",
+   "name": "R",
+   "category": "abecedario"
+  },
+  "letra_s": {
+   "text": "Cierra la mano con el pulgar sobre los demás dedos. La palma mira al frente.",
+   "source": "sep",
+   "name": "S",
+   "category": "abecedario"
+  },
+  "letra_t": {
+   "text": "Cierra la mano con el pulgar metido entre el índice y el medio. La palma mira al frente.",
+   "source": "sep",
+   "name": "T",
+   "category": "abecedario"
+  },
+  "letra_u": {
+   "text": "Cierra la mano y estira el índice y el medio juntos. La palma mira al frente.",
+   "source": "sep",
+   "name": "U",
+   "category": "abecedario"
+  },
+  "letra_v": {
+   "text": "Cierra la mano y estira el índice y el medio separados. La palma mira al frente.",
+   "source": "sep",
+   "name": "V",
+   "category": "abecedario"
+  },
+  "letra_w": {
+   "text": "Cierra la mano y estira el índice, el medio y el anular separados. La palma mira al frente.",
+   "source": "sep",
+   "name": "W",
+   "category": "abecedario"
+  },
+  "letra_x": {
+   "text": "Cierra la mano con el índice y el pulgar en forma de garra y la palma hacia un lado; muévela hacia el frente y regresa.",
+   "source": "sep",
+   "name": "X",
+   "category": "abecedario"
+  },
+  "letra_y": {
+   "text": "Cierra la mano y estira el meñique y el pulgar. La palma mira hacia ti.",
+   "source": "sep",
+   "name": "Y",
+   "category": "abecedario"
+  },
+  "letra_z": {
+   "text": "Con la mano cerrada, el índice estirado y la palma al frente, dibuja una Z en el aire.",
+   "source": "sep",
+   "name": "Z",
+   "category": "abecedario"
+  },
+  "num_0": {
+   "text": "",
+   "source": "pendiente",
+   "name": "0",
+   "category": "numeros"
+  },
+  "num_1": {
+   "text": "Estira el índice con la palma al frente.",
+   "source": "sep",
+   "name": "1",
+   "category": "numeros"
+  },
+  "num_2": {
+   "text": "Estira el índice y el medio.",
+   "source": "sep",
+   "name": "2",
+   "category": "numeros"
+  },
+  "num_3": {
+   "text": "Estira el índice, el medio y el anular, con la palma al frente.",
+   "source": "sep",
+   "name": "3",
+   "category": "numeros"
+  },
+  "num_4": {
+   "text": "Estira el índice, el medio, el anular y el meñique.",
+   "source": "sep",
+   "name": "4",
+   "category": "numeros"
+  },
+  "num_5": {
+   "text": "Abre la mano con la palma al frente y los dedos separados.",
+   "source": "sep",
+   "name": "5",
+   "category": "numeros"
+  },
+  "num_6": {
+   "text": "Haz la letra A con el pulgar hacia arriba.",
+   "source": "sep",
+   "name": "6",
+   "category": "numeros"
+  },
+  "num_7": {
+   "text": "Haz la letra G un poco inclinada.",
+   "source": "sep",
+   "name": "7",
+   "category": "numeros"
+  },
+  "num_8": {
+   "text": "Estira el pulgar, el índice y el medio separados, con la palma hacia ti.",
+   "source": "sep",
+   "name": "8",
+   "category": "numeros"
+  },
+  "num_9": {
+   "text": "Haz la letra B con la palma hacia ti y luego cierra los dedos alrededor del pulgar.",
+   "source": "sep",
+   "name": "9",
+   "category": "numeros"
+  },
+  "num_10": {
+   "text": "Haz el 5 con la palma hacia arriba y gira la mano rápidamente hacia abajo.",
+   "source": "sep",
+   "name": "10",
+   "category": "numeros"
+  },
+  "num_11": {
+   "text": "Haz la letra A con la palma hacia ti y el pulgar hacia arriba, y gira la mano hacia arriba y a un lado.",
+   "source": "sep",
+   "name": "11",
+   "category": "numeros"
+  },
+  "num_12": {
+   "text": "Haz el 7 y mueve la mano hacia arriba y a un lado.",
+   "source": "sep",
+   "name": "12",
+   "category": "numeros"
+  },
+  "num_13": {
+   "text": "Haz el 8 y gira la mano hacia arriba y a un lado.",
+   "source": "sep",
+   "name": "13",
+   "category": "numeros"
+  },
+  "num_14": {
+   "text": "Estira el índice, el medio, el anular y el meñique, y mueve la mano hacia arriba y a un lado.",
+   "source": "sep",
+   "name": "14",
+   "category": "numeros"
+  },
+  "num_15": {
+   "text": "Con las dos manos abiertas y las palmas hacia ti, una delante de la otra, muévelas alternadamente hacia arriba y a un lado.",
+   "source": "sep",
+   "alt": "Otra forma: haz el 5 y gira la mano hacia arriba y a un lado.",
+   "name": "15",
+   "category": "numeros"
+  },
+  "num_16": {
+   "text": "Haz el 6 con la palma hacia abajo y muévelo hacia adelante.",
+   "source": "sep",
+   "name": "16",
+   "category": "numeros"
+  },
+  "num_17": {
+   "text": "Haz el 7 con la palma hacia abajo y muévelo hacia adelante.",
+   "source": "sep",
+   "name": "17",
+   "category": "numeros"
+  },
+  "num_18": {
+   "text": "Haz el 8 con las puntas de los dedos hacia el frente y muévelo hacia adelante.",
+   "source": "sep",
+   "name": "18",
+   "category": "numeros"
+  },
+  "num_19": {
+   "text": "Haz el 4 con las puntas de los dedos hacia el frente y muévelo hacia adelante.",
+   "source": "sep",
+   "name": "19",
+   "category": "numeros"
+  },
+  "num_20": {
+   "text": "Con la mano cerrada, junta y separa las puntas del índice y el pulgar.",
+   "source": "sep",
+   "name": "20",
+   "category": "numeros"
+  },
+  "num_30": {
+   "text": "Toca la punta del pulgar con la punta del dedo medio, dejando el índice un poco levantado.",
+   "source": "sep",
+   "name": "30",
+   "category": "numeros"
+  },
+  "num_40": {
+   "text": "Con la mano abierta, junta y separa las yemas del índice y el pulgar.",
+   "source": "sep",
+   "name": "40",
+   "category": "numeros"
+  },
+  "num_50": {
+   "text": "Abre la mano con la palma hacia ti y los dedos separados, y mueve los dedos uno por uno hacia adelante y atrás.",
+   "source": "sep",
+   "name": "50",
+   "category": "numeros"
+  },
+  "num_60": {
+   "text": "Haz la letra S e intenta abrir y cerrar la mano varias veces.",
+   "source": "sep",
+   "name": "60",
+   "category": "numeros"
+  },
+  "num_70": {
+   "text": "Haz el 7 y junta y separa el pulgar y el índice varias veces.",
+   "source": "sep",
+   "name": "70",
+   "category": "numeros"
+  },
+  "num_80": {
+   "text": "Estira el índice, el medio y el pulgar señalando al frente, y júntalos y sepáralos varias veces.",
+   "source": "sep",
+   "name": "80",
+   "category": "numeros"
+  },
+  "num_90": {
+   "text": "Con los dedos juntos y la palma al frente, sepáralos y júntalos varias veces.",
+   "source": "sep",
+   "name": "90",
+   "category": "numeros"
+  },
+  "num_100": {
+   "text": "Estira el índice y muévelo hacia un lado hasta formar una C.",
+   "source": "sep",
+   "name": "100",
+   "category": "numeros"
+  },
+  "nada": {
+   "text": "No hagas ninguna seña: baja las manos, ráscate o acomódate el pelo. Así la app aprende cuándo NO estás haciendo una seña.",
+   "source": "mira",
+   "name": "Nada",
+   "category": "palabras"
+  }
+ }
+}

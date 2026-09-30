@@ -4,7 +4,8 @@ Construye la APK de Android con el modelo que se entreno en ESTA computadora.
     python tools/build_apk.py
 
 Pasos:
-  1. Exporta el modelo actual a la app (Gradle agrega el detector de manos).
+  1. Exporta el modelo actual y las animaciones de "Aprender" (Gradle agrega el
+     detector de manos y las instrucciones de cada sena).
   2. Crea la llave de firma la primera vez (android/keystore). GUARDENLA:
      sin ella no se puede actualizar la app ya instalada en los celulares.
   3. Compila con Gradle y deja la APK en dist/MiraTek.apk.
@@ -76,6 +77,8 @@ def ensure_keystore(env):
 def main():
     env = _env()
     export_model()
+    from tools.make_learn_assets import main as make_learn_assets
+    make_learn_assets()  # animaciones de "Aprender" a partir de las grabaciones de esta PC
     ensure_keystore(env)
     gradlew = ANDROID / ("gradlew.bat" if os.name == "nt" else "gradlew")
     subprocess.run([str(gradlew), "assembleRelease", "--console=plain"], cwd=ANDROID, env=env, check=True)

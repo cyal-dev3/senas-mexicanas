@@ -3,10 +3,10 @@ Arma la frase a partir de las senas reconocidas.
 
   - Palabras: cada sena es una palabra nueva.
   - Letras: se juntan en una palabra mientras no bajes las manos (H-O-L-A -> HOLA).
-  - Numeros: se combinan como se dicen o como se escriben:
-        20 y luego 3   -> 23   (decena + unidad)
-        10 y luego 6   -> 16   (dieci-)
-        1, 0 y 0       -> 100  (digito por digito)
+  - Numeros: como en la Lengua de Senas Mexicana, del 0 al 19, las decenas y
+    el 100 tienen su propia sena; los demas se arman sumando:
+        20 y luego 3        -> 23   (decena + unidad)
+        100, 20 y luego 5   -> 125  (cien + lo que sigue)
     Bajar las manos (o hacer "Nada") termina la palabra o el numero.
 
 La app de Android usa exactamente las mismas reglas (Phrase.kt).
@@ -27,8 +27,6 @@ class Item:
 
 
 class PhraseBuilder:
-    MAX_NUMBER = 999
-
     def __init__(self):
         self.items = []
 
@@ -69,13 +67,11 @@ class PhraseBuilder:
         if item:
             prev_token = item.last_token
             new = None
-            if prev_token in range(20, 100, 10) and item.value == prev_token and 1 <= v <= 9:
-                new = item.value + v          # 20 + 3 = 23
-            elif prev_token == 10 and item.value == 10 and 6 <= v <= 9:
-                new = 10 + v                  # 10 + 6 = 16
-            elif prev_token <= 9 and v <= 9:
-                new = item.value * 10 + v     # 1, 0, 0 = 100
-            if new is not None and new <= self.MAX_NUMBER:
+            if prev_token == 100 and 1 <= v <= 99:
+                new = item.value + v          # 100 y 25 = 125
+            elif prev_token in range(20, 100, 10) and 1 <= v <= 9:
+                new = item.value + v          # 20 y 3 = 23
+            if new is not None:
                 item.value, item.last_token, item.text = new, v, str(new)
                 return
         self.close()

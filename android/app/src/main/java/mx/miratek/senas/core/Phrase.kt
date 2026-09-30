@@ -5,7 +5,8 @@ package mx.miratek.senas.core
  *
  *  - Palabras: cada una es un elemento nuevo.
  *  - Letras: se juntan mientras no bajes las manos (H-O-L-A -> HOLA).
- *  - Numeros: 20 y 3 -> 23; 10 y 6 -> 16; 1, 0 y 0 -> 100.
+ *  - Numeros (como en LSM): 20 y 3 -> 23; 100, 20 y 5 -> 125. Del 0 al 19,
+ *    las decenas y el 100 tienen su propia sena.
  */
 class PhraseBuilder {
     enum class Kind { WORD, SPELL, NUMBER }
@@ -60,12 +61,11 @@ class PhraseBuilder {
         if (item != null) {
             val prev = item.lastToken
             val new = when {
-                prev in 20..90 && prev % 10 == 0 && item.value == prev && v in 1..9 -> item.value + v
-                prev == 10 && item.value == 10 && v in 6..9 -> 10 + v
-                prev <= 9 && v <= 9 -> item.value * 10 + v
+                prev == 100 && v in 1..99 -> item.value + v
+                prev in 20..90 && prev % 10 == 0 && v in 1..9 -> item.value + v
                 else -> null
             }
-            if (new != null && new <= MAX_NUMBER) {
+            if (new != null) {
                 item.value = new
                 item.lastToken = v
                 item.text = new.toString()
@@ -89,8 +89,4 @@ class PhraseBuilder {
 
     /** Texto para leer en voz alta. */
     fun sentence(): String = texts.joinToString(" ")
-
-    companion object {
-        const val MAX_NUMBER = 999
-    }
 }

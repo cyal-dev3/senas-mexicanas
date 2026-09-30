@@ -5,6 +5,7 @@ y donde se guardan los archivos.
 Si quieren agregar una sena nueva, solo agreguenla a la lista SIGNS.
 """
 
+import json
 import os
 import re
 import sys
@@ -69,10 +70,10 @@ _LETTERS = tuple(
     for ch in "ABCDEFGHIJKLMNÑOPQRSTUVWXYZ"
 )
 
-# Numeros: no hace falta grabar los 101. Se graban las senas base y la app arma
-# el resto en vivo (20 + 3 = 23, o digito por digito: 1-0-0 = 100).
-# Si alguna sena especial no se usa, basta con no grabarla: no entra al modelo.
-NUMBER_VALUES = tuple(range(0, 16)) + tuple(range(20, 100, 10)) + (100,)
+# Numeros: en LSM del 0 al 19, las decenas y el 100 tienen su propia sena. El resto
+# se arma como en el diccionario de LSM: decena + unidad (20 y 3 = 23) y
+# 100 + lo que sigue (100 y 25 = 125). Senas sin grabar no entran al modelo.
+NUMBER_VALUES = tuple(range(0, 20)) + tuple(range(20, 100, 10)) + (100,)
 _NUMBERS = tuple(Sign(f"num_{v}", str(v), NUMBERS, NUMBER_HINT) for v in NUMBER_VALUES)
 
 NOTHING = Sign(NOTHING_ID, "Nada", WORDS,
@@ -102,6 +103,21 @@ def number_value(sign_id):
     if category_of(sign_id) != NUMBERS:
         return None
     return int(SIGN_BY_ID[sign_id].name)
+
+
+_INSTRUCTIONS = None
+
+
+def sign_instructions(sign_id):
+    """Como se hace una sena (assets/senas_info.json, compartido con el celular)."""
+    global _INSTRUCTIONS
+    if _INSTRUCTIONS is None:
+        try:
+            data = json.loads(resource_path("assets", "senas_info.json").read_text(encoding="utf-8"))
+            _INSTRUCTIONS = {k: v.get("text", "") for k, v in data.get("signs", {}).items()}
+        except (OSError, ValueError):
+            _INSTRUCTIONS = {}
+    return _INSTRUCTIONS.get(sign_id, "")
 
 
 def sign_name(sign_id):

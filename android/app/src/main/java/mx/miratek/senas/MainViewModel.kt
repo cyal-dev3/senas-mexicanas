@@ -23,6 +23,8 @@ import mx.miratek.senas.core.Prediction
 import mx.miratek.senas.core.Sensitivity
 import mx.miratek.senas.core.SignInfo
 import mx.miratek.senas.core.SignModel
+import mx.miratek.senas.data.LearnRepository
+import mx.miratek.senas.data.LearnSign
 import mx.miratek.senas.data.ModelRepository
 import mx.miratek.senas.data.Speaker
 
@@ -43,11 +45,22 @@ data class UiState(
     val cameraKey: Int = 0,           // cambia para volver a abrir la camara
     val hasUserModel: Boolean = false,
     val hasBundledModel: Boolean = false,
-)
+    // Aprender y perfil
+    val learn: List<LearnSign> = emptyList(),
+    val practiced: Set<String> = emptySet(),
+    val profileName: String = "Usuario",
+    // Practica: sena que se esta practicando (null = modo traductor)
+    val practiceTarget: String? = null,
+    val practiceDone: Boolean = false,
+    val practiceHint: String? = null,
+) {
+    fun modelKnows(signId: String) = model?.signs?.any { it.id == signId } == true
+}
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = app.getSharedPreferences("miratek", Context.MODE_PRIVATE)
     private val repo = ModelRepository(app)
+    private val learnRepo = LearnRepository(app)
     private val speaker = Speaker(app)
     private val phrase = PhraseBuilder()
     private val lock = Any()
@@ -60,6 +73,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 .getOrDefault(Sensitivity.MEDIUM),
             autoSpeak = prefs.getBoolean("autoSpeak", true),
             frontCamera = prefs.getBoolean("frontCamera", true),
+            practiced = prefs.getStringSet("practiced", emptySet())!!.toSet(),
+            profileName = prefs.getString("profileName", "Usuario")!!,
         )
     )
     val state: StateFlow<UiState> = _state.asStateFlow()
@@ -77,6 +92,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     init {
         viewModelScope.launch(Dispatchers.IO) {
             setModel(repo.load())
+            val learn = runCatching { learnRepo.load() }.getOrDefault(emptyList())
+            _state.update { it.copy(learn = learn) }
             analyzer  // prepara MediaPipe antes de que se abra la camara
         }
     }
@@ -106,6 +123,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             rec.aspect = width.toDouble() / height
             val (prediction, event) = rec.push(t, hands.image, hands.world, hands.any)
             if (prediction == null && event == null) return
+            val target = _state.value.practiceTarget
+            if (target != null) {
+                onPracticeEvent(target, prediction, event?.sign)
+                return
+            }
             val speak = _state.value.autoSpeak
             if (prediction != null && (!prediction.handsVisible || prediction.sign?.isNothing == true)) {
                 phrase.close()?.let { finished -> if (speak) speaker.speak(finished) }
@@ -123,6 +145,55 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
         }
+    }
+
+    /** En modo practica: la sena correcta cuenta como aprendida; otra da una pista. */
+    private fun onPracticeEvent(target: String, prediction: Prediction?, sign: SignInfo?) {
+        var done = false
+        var hint: String? = null
+        if (sign != null) {
+            if (sign.id == target) done = true else hint = "Parece «${sign.name}». Intenta otra vez."
+        }
+        if (done) {
+            val practiced = _state.value.practiced + target
+            prefs.edit().putStringSet("practiced", practiced).apply()
+            _state.update { it.copy(practiced = practiced) }
+        }
+        _state.update {
+            it.copy(
+                prediction = prediction ?: it.prediction,
+                practiceDone = it.practiceDone || done,
+                practiceHint = if (done) null else hint ?: it.practiceHint,
+                eventCount = if (sign != null) it.eventCount + 1 else it.eventCount,
+                cameraError = null,
+            )
+        }
+    }
+
+    // ---------------- Practica ----------------
+
+    fun startPractice(signId: String) {
+        val category = _state.value.learn.firstOrNull { it.id == signId }?.category
+        synchronized(lock) {
+            recognizer?.reset()
+            recognizer?.setAllowedCategory(category)
+        }
+        _state.update { it.copy(practiceTarget = signId, practiceDone = false, practiceHint = null, prediction = null) }
+    }
+
+    fun stopPractice() {
+        synchronized(lock) {
+            recognizer?.reset()
+            val model = _state.value.model
+            if (model != null) recognizer?.setAllowedCategory(allowedFor(_state.value.mode, model))
+        }
+        _state.update { it.copy(practiceTarget = null, practiceDone = false, practiceHint = null, prediction = null) }
+    }
+
+    fun setProfileName(name: String) {
+        val clean = name.trim().take(30).ifBlank { "Usuario" }
+        prefs.edit().putString("profileName", clean).apply()
+        _state.update { it.copy(profileName = clean) }
     }
 
     // ---------------- Acciones de la pantalla ----------------

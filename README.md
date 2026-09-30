@@ -7,8 +7,8 @@ Mexicana (LSM) con la cámara del celular y las convierte en texto y voz. Funcio
 
 - **Palabras:** Hola, Gracias, Por favor, Sí, No, Ayuda, Agua, Comida, Baño, Doctor, Familia, Amigo, Disculpa, Te quiero.
 - **Abecedario:** A–Z y Ñ. Las letras se juntan en palabras (H-O-L-A → HOLA).
-- **Números del 0 al 100:** se graban las señas base (0–15, 20, 30…90 y 100) y la app arma el resto
-  (20 y luego 3 → 23; 1, 0, 0 → 100).
+- **Números:** como en LSM, del 0 al 19, las decenas y el 100 tienen su propia seña; la app arma el
+  resto (20 y luego 3 → 23; 100, 20 y 5 → 125).
 
 El modelo se entrena en una **PC con Windows** usando `MiraTek.exe`, una app de escritorio que cualquier
 persona puede usar con un botón.
@@ -64,11 +64,23 @@ Mensaje sugerido para mandar junto con el `.exe`:
 
 ## App de Android
 
-- Modos **Palabras**, **Deletreo** y **Números**. Cada modo solo compite contra su categoría, así una
-  «O» nunca se confunde con el «0».
-- Botón **Leer en voz alta** (voz del teléfono, sin internet) y lectura automática opcional.
-- Cámara frontal o trasera, y tres niveles de sensibilidad.
-- No pide permiso de internet: la cámara nunca sale del teléfono.
+Cuatro secciones en el menú de abajo:
+
+- **Traductor:** la cámara ocupa casi toda la pantalla para que te veas completo. Modos **Palabras**,
+  **Deletreo** y **Números** (cada modo solo compite contra su categoría: una «O» nunca se confunde con
+  el «0»), frase en una barra delgada y botón **Leer en voz alta** (voz del teléfono, sin internet).
+- **Aprender:** cada seña con una animación grabada por el equipo (se ve como en un espejo), cómo se hace
+  y **Practicar con la cámara**: la app te dice si la hiciste bien.
+- **Perfil:** nombre, nivel según las señas practicadas y los planes (Inclusión, Pro y Aliado). Por ahora
+  los planes solo se muestran: no hay cobros (la app no usa internet ni servidores).
+- **Ajustes:** cargar modelo, sensibilidad, cámara y lectura automática.
+
+No pide permiso de internet: la cámara nunca sale del teléfono.
+
+**Instrucciones de las señas:** están en `assets/senas_info.json` (las usan la PC y el celular). Se
+generan con `tools/make_signs_info.py`: las de Keysita van tal cual y el resto se redactó a partir del
+Diccionario de Lengua de Señas Mexicana «Manos con Voz» (SEP/CONAPRED). Faltan **Hola**, **Doctor**,
+**Disculpa** y **0**, que no vienen en ese diccionario: mientras, la app muestra su animación.
 
 ## Para desarrollar
 

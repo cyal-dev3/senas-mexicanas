@@ -36,6 +36,7 @@ def main():
         "--add-data", f"{assets / 'hand_landmarker.task'}{SEP}assets",
         "--add-data", f"{assets / 'icon.png'}{SEP}assets",
         "--add-data", f"{assets / 'logo.png'}{SEP}assets",
+        "--add-data", f"{assets / 'senas_info.json'}{SEP}assets",
         "--collect-binaries", "mediapipe",
         "--collect-data", "mediapipe",
         "--exclude-module", "pytest",

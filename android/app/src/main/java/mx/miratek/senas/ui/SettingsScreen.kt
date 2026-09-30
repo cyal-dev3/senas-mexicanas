@@ -42,7 +42,7 @@ private val CATEGORY_NAMES = mapOf(
 )
 
 class SettingsActions(
-    val onBack: () -> Unit = {},
+    val onBack: (() -> Unit)? = null,
     val onLoadModel: () -> Unit = {},
     val onUseBundled: () -> Unit = {},
     val onSensitivity: (Sensitivity) -> Unit = {},
@@ -51,7 +51,7 @@ class SettingsActions(
 )
 
 @Composable
-fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onLoadModel: () -> Unit) {
+fun SettingsScreen(vm: MainViewModel, onBack: (() -> Unit)?, onLoadModel: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     StatusBarIcons(light = false)
     SettingsContent(
@@ -69,8 +69,10 @@ fun SettingsContent(state: UiState, actions: SettingsActions) {
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconCircleButton(MiraIcons.Back, "Regresar", actions.onBack)
-            Spacer(Modifier.width(14.dp))
+            actions.onBack?.let {
+                IconCircleButton(MiraIcons.Back, "Regresar", it)
+                Spacer(Modifier.width(14.dp))
+            }
             Text("Ajustes", style = MaterialTheme.typography.headlineLarge, color = Mira.Text)
         }
 
