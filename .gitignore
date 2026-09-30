@@ -189,3 +189,6 @@ android/keystore/
 android/app/src/main/assets/modelo_android.json
 # PyInstaller (la spec se genera desde build_exe.py)
 capturas/
+
+# Grabaciones recibidas (datos personales: no se suben a GitHub)
+recordings/

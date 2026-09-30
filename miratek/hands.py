@@ -16,6 +16,7 @@ claro que llenarlos con ceros.
 """
 
 import os
+import sys
 from dataclasses import dataclass
 
 import numpy as np
@@ -107,6 +108,10 @@ class HandDetector:
         # Silenciar los mensajes internos de MediaPipe en la terminal
         os.environ.setdefault("GLOG_minloglevel", "2")
         os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
+        if getattr(sys, "frozen", False):
+            # Dentro del .exe, matplotlib (que MediaPipe carga) usaria una carpeta
+            # temporal y rehace su cache de fuentes cada vez: ~4 s mas lento.
+            os.environ["MPLCONFIGDIR"] = str(config.user_data_dir() / "matplotlib")
         # Importamos aqui (y no arriba) porque MediaPipe tarda unos segundos en
         # cargar; asi la ventana aparece rapido.
         from mediapipe.tasks.python.core import base_options
