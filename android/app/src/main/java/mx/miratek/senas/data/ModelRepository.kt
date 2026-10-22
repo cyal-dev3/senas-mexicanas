@@ -23,10 +23,18 @@ class ModelRepository(private val context: Context) {
     val hasBundledModel: Boolean
         get() = runCatching { context.assets.open(BUNDLED).close(); true }.getOrDefault(false)
 
+    /** true si el ultimo modelo cargado es el de la persona (si su archivo falla, se usa el incluido). */
+    @Volatile var usingUserModel = false
+        private set
+
     fun load(): SignModel? {
         if (userFile.exists()) {
-            runCatching { return SignModel.fromJson(userFile.readText()) }
+            runCatching { SignModel.fromJson(userFile.readText()) }.getOrNull()?.let {
+                usingUserModel = true
+                return it
+            }
         }
+        usingUserModel = false
         return runCatching {
             context.assets.open(BUNDLED).bufferedReader().use { SignModel.fromJson(it.readText()) }
         }.getOrNull()
@@ -48,6 +56,7 @@ class ModelRepository(private val context: Context) {
             userFile.delete()
             tmp.renameTo(userFile)
         }
+        usingUserModel = true
         return model
     }
 

@@ -7,8 +7,8 @@ manos, cuadro por cuadro. La app las dibuja como un esqueleto animado.
 
     python tools/make_learn_assets.py [salida.json]
 
-Por defecto escribe android/app/src/main/assets/learn_clips.json (no se sube a
-git: sale de las grabaciones de las personas).
+Por defecto escribe assets/learn_clips.json (no se sube a git: sale de las
+grabaciones de las personas). Gradle lo copia a las dos apps de Android.
 """
 
 import json
@@ -25,7 +25,7 @@ from miratek.dataset import DatasetStore  # noqa: E402
 from miratek.features import window_features  # noqa: E402
 
 FPS = 15
-DEFAULT_OUT = ROOT / "android" / "app" / "src" / "main" / "assets" / "learn_clips.json"
+DEFAULT_OUT = ROOT / "assets" / "learn_clips.json"
 
 
 def pick_clip(clips):
@@ -45,7 +45,7 @@ def frames_of(clip):
         i = int(np.argmin(np.abs(t - ts)))
         frame = []
         for slot in (0, 1):
-            pts = clip.image[i, slot, :, :2]
+            pts = clip.image[i, slot, :, :2].astype(np.float64)  # en float32, 0.333 se imprime con 16 decimales
             frame.append(None if not np.isfinite(pts).all() else np.round(pts, 3).tolist())
         frames.append(frame)
     return frames

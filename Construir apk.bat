@@ -1,5 +1,5 @@
 @echo off
-rem Construye dist\MiraTek.apk con el modelo entrenado en esta PC.
+rem Construye dist\MiraTek.apk (traductor) y dist\MiraTek-Entrenador.apk con el modelo entrenado en esta PC.
 cd /d "%~dp0"
 if not exist .venv\Scripts\python.exe (
     echo Primero ejecuta "Construir exe.bat" o instala el entorno de Python.

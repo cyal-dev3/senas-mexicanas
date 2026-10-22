@@ -1,6 +1,7 @@
 package mx.miratek.senas
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -15,6 +16,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Snackbar
@@ -27,13 +29,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import androidx.compose.foundation.layout.Column
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import mx.miratek.senas.ui.BottomNav
 import mx.miratek.senas.ui.LearnScreen
@@ -66,9 +69,12 @@ class MainActivity : ComponentActivity() {
         handleIntent(intent)
     }
 
-    /** Si abren un archivo de modelo desde WhatsApp o Archivos, lo cargamos. */
+    /** Si abren un archivo de modelo desde WhatsApp o Archivos, lo cargamos (una sola vez). */
     private fun handleIntent(intent: Intent?) {
-        val uri: Uri? = when (intent?.action) {
+        if (intent == null) return
+        // Desde "Recientes" Android repite el intent con el que se abrio: ese archivo ya se cargo
+        if ((intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) return
+        val uri: Uri? = when (intent.action) {
             Intent.ACTION_VIEW -> intent.data
             Intent.ACTION_SEND -> if (android.os.Build.VERSION.SDK_INT >= 33) {
                 intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
@@ -77,17 +83,24 @@ class MainActivity : ComponentActivity() {
             }
             else -> null
         }
-        if (uri != null) vm.importModel(uri)
+        if (uri != null) {
+            vm.importModel(uri)
+            setIntent(Intent(this, MainActivity::class.java).setAction(Intent.ACTION_MAIN))  // ya se uso
+        }
     }
 }
+
+private fun hasCameraPermission(context: Context) =
+    ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
 
 @Composable
 private fun App(vm: MainViewModel) {
     val context = LocalContext.current
-    var granted by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
-        )
+    var granted by remember { mutableStateOf(hasCameraPermission(context)) }
+    // Si dan el permiso en los ajustes del telefono y regresan, se nota al volver
+    LifecycleResumeEffect(Unit) {
+        granted = hasCameraPermission(context)
+        onPauseOrDispose { }
     }
     var denied by rememberSaveable { mutableStateOf(false) }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
@@ -104,6 +117,8 @@ private fun App(vm: MainViewModel) {
     var detail by rememberSaveable { mutableStateOf<String?>(null) }   // sena abierta en "Aprender"
     val practicing = state.practiceTarget
     val snackbar = remember { SnackbarHostState() }
+    // Cada pestana recuerda su scroll y lo que tenia elegido al ir y volver
+    val saved = rememberSaveableStateHolder()
     LaunchedEffect(Unit) { vm.messages.collect { snackbar.showSnackbar(it) } }
 
     fun selectTab(new: Tab) {
@@ -125,27 +140,33 @@ private fun App(vm: MainViewModel) {
         } else {
             Column(Modifier.fillMaxSize()) {
                 Box(Modifier.weight(1f)) {
-                    when (tab) {
-                        Tab.TRANSLATE -> TranslatorScreen(vm, onLoadModel = openPicker)
-                        Tab.LEARN -> when {
-                            practicing != null -> PracticeScreen(
-                                vm, state, practicing,
-                                onExit = { vm.stopPractice() },
-                                onNext = nextSign(state, practicing)?.let { next -> { detail = next; vm.startPractice(next) } },
-                            )
-                            detail != null -> SignDetailScreen(
-                                state, detail!!, onBack = { detail = null },
-                                onPractice = { vm.startPractice(it) }, onOpen = { detail = it },
-                            )
-                            else -> LearnScreen(state, onOpen = { detail = it })
+                    saved.SaveableStateProvider(tab.name) {
+                        when (tab) {
+                            Tab.TRANSLATE -> TranslatorScreen(vm, onLoadModel = openPicker)
+                            Tab.LEARN -> when {
+                                practicing != null -> PracticeScreen(
+                                    vm, state, practicing,
+                                    onExit = { vm.stopPractice() },
+                                    onNext = nextSign(state, practicing)?.let { next -> { detail = next; vm.startPractice(next) } },
+                                )
+                                detail != null -> SignDetailScreen(
+                                    state, detail!!, onBack = { detail = null },
+                                    onPractice = { vm.startPractice(it) }, onOpen = { detail = it },
+                                )
+                                // La lista conserva la categoria y el scroll al abrir una sena y volver
+                                else -> saved.SaveableStateProvider("learn-list") {
+                                    LearnScreen(state, onOpen = { detail = it })
+                                }
+                            }
+                            Tab.PROFILE -> ProfileScreen(state, onRename = vm::setProfileName)
+                            Tab.SETTINGS -> SettingsScreen(vm, onBack = null, onLoadModel = openPicker)
                         }
-                        Tab.PROFILE -> ProfileScreen(state, onRename = vm::setProfileName)
-                        Tab.SETTINGS -> SettingsScreen(vm, onBack = null, onLoadModel = openPicker)
                     }
                 }
                 if (practicing == null) BottomNav(tab, ::selectTab)
             }
-            BackHandler(enabled = practicing != null || detail != null || tab != Tab.TRANSLATE) {
+            // En el Traductor (aunque haya una sena abierta en Aprender) Atras cierra la app
+            BackHandler(enabled = practicing != null || tab != Tab.TRANSLATE) {
                 when {
                     practicing != null -> vm.stopPractice()
                     tab == Tab.LEARN && detail != null -> detail = null

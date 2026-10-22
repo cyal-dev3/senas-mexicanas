@@ -1,0 +1,37 @@
+name: Pruebas
+
+on:
+  push:
+    branches: [main, mejoras]
+  pull_request:
+
+jobs:
+  python:
+    name: Python (miratek)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Las pruebas no abren la camara ni la interfaz: con NumPy y pytest basta.
+      - run: pip install numpy pytest
+      - run: python -m pytest -q
+
+  android:
+    name: Android (core, app y entrenador)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Pruebas unitarias y de paridad
+        working-directory: android
+        run: ./gradlew :core:testDebugUnitTest :app:testDebugUnitTest :trainer:testDebugUnitTest --console=plain
+      - name: Compilar las dos APK (debug)
+        working-directory: android
+        run: ./gradlew :app:assembleDebug :trainer:assembleDebug --console=plain

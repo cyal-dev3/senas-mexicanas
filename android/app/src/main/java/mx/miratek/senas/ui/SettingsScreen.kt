@@ -14,7 +14,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -22,9 +25,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -34,6 +42,9 @@ import mx.miratek.senas.MainViewModel
 import mx.miratek.senas.UiState
 import mx.miratek.senas.core.Sensitivity
 import mx.miratek.senas.core.SignInfo
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 private val CATEGORY_NAMES = mapOf(
     SignInfo.CATEGORY_WORDS to "Palabras",
@@ -48,6 +59,7 @@ class SettingsActions(
     val onSensitivity: (Sensitivity) -> Unit = {},
     val onFrontCamera: (Boolean) -> Unit = {},
     val onAutoSpeak: (Boolean) -> Unit = {},
+    val onLeftHanded: (Boolean) -> Unit = {},
 )
 
 @Composable
@@ -56,13 +68,24 @@ fun SettingsScreen(vm: MainViewModel, onBack: (() -> Unit)?, onLoadModel: () -> 
     StatusBarIcons(light = false)
     SettingsContent(
         state,
-        SettingsActions(onBack, onLoadModel, vm::useBundledModel, vm::setSensitivity, vm::setFrontCamera, vm::setAutoSpeak),
+        SettingsActions(
+            onBack = onBack, onLoadModel = onLoadModel, onUseBundled = vm::useBundledModel,
+            onSensitivity = vm::setSensitivity, onFrontCamera = vm::setFrontCamera,
+            onAutoSpeak = vm::setAutoSpeak, onLeftHanded = vm::setLeftHanded,
+        ),
     )
 }
+
+/** "2026-10-20T14:33:05" -> "20 de octubre de 2026, 14:33" (si no se entiende, se muestra tal cual). */
+private fun friendlyDate(iso: String): String = runCatching {
+    LocalDateTime.parse(iso.take(19))
+        .format(DateTimeFormatter.ofPattern("d 'de' MMMM 'de' yyyy, HH:mm", Locale("es", "MX")))
+}.getOrDefault(iso.replace('T', ' ').take(16))
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsContent(state: UiState, actions: SettingsActions) {
+    var confirmBundled by rememberSaveable { mutableStateOf(false) }
     Column(
         Modifier.fillMaxSize().background(Mira.Bg).verticalScroll(rememberScrollState())
             .statusBarsPadding().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 12.dp),
@@ -87,6 +110,15 @@ fun SettingsContent(state: UiState, actions: SettingsActions) {
                 Text("Créalo en la app de PC con «Crear archivo para el celular».", color = Mira.Text2)
             } else {
                 val report = model.report
+                // Cual modelo esta activo: el que cargo la persona o el que trae la app
+                Text(
+                    if (state.usingUserModel) "Usas el modelo que cargaste" else "Usas el modelo incluido en la app",
+                    style = MaterialTheme.typography.titleLarge, color = Mira.Text,
+                )
+                if (report?.trainedAt?.isNotBlank() == true) {
+                    Text("Entrenado el ${friendlyDate(report.trainedAt)}", color = Mira.Text3, fontSize = 13.sp)
+                }
+                VSpace(10.dp)
                 if (report != null) {
                     Row(verticalAlignment = Alignment.Bottom) {
                         val pct = (report.accuracy * 100).toInt()
@@ -113,15 +145,11 @@ fun SettingsContent(state: UiState, actions: SettingsActions) {
                         StatPill("${report.signers} ${if (report.signers == 1) "persona" else "personas"} · ${report.clips} clips")
                     }
                 }
-                if (report?.trainedAt?.isNotBlank() == true) {
-                    VSpace(8.dp)
-                    Text("Entrenado: ${report.trainedAt.replace('T', ' ').take(16)}", color = Mira.Text3, fontSize = 13.sp)
-                }
             }
             VSpace(16.dp)
             PrimaryButton("Cargar modelo desde archivo", actions.onLoadModel, Modifier.fillMaxWidth(), MiraIcons.Folder)
-            if (state.hasUserModel && state.hasBundledModel) {
-                TextButton(onClick = actions.onUseBundled, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+            if (state.usingUserModel && state.hasBundledModel) {
+                TextButton(onClick = { confirmBundled = true }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
                     Text("Usar el modelo incluido en la app", color = Mira.Text2)
                 }
             }
@@ -147,18 +175,18 @@ fun SettingsContent(state: UiState, actions: SettingsActions) {
                 listOf("front" to "Frontal", "back" to "Trasera"), if (state.frontCamera) "front" else "back",
                 { actions.onFrontCamera(it == "front") }, Modifier.fillMaxWidth(),
             )
-            VSpace(18.dp)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Leer en voz alta automáticamente", style = MaterialTheme.typography.titleMedium, color = Mira.Text)
-                    Text("Dice cada palabra al reconocerla (con la voz del teléfono, sin internet).",
-                        color = Mira.Text3, fontSize = 13.sp)
-                }
-                Switch(
-                    checked = state.autoSpeak, onCheckedChange = actions.onAutoSpeak,
-                    colors = SwitchDefaults.colors(checkedTrackColor = Mira.Accent, checkedThumbColor = Color.White),
-                )
-            }
+            VSpace(14.dp)
+            SwitchRow(
+                "Hago las señas con la mano izquierda",
+                "Actívalo si tu mano principal es la izquierda: así la app te entiende mejor.",
+                state.leftHanded, actions.onLeftHanded,
+            )
+            VSpace(8.dp)
+            SwitchRow(
+                "Leer en voz alta automáticamente",
+                "Dice cada palabra al reconocerla (con la voz del teléfono, sin internet).",
+                state.autoSpeak, actions.onAutoSpeak,
+            )
         }
 
         // ---- Senas que conoce ----
@@ -194,5 +222,46 @@ fun SettingsContent(state: UiState, actions: SettingsActions) {
             FeatureRow(MiraIcons.Lock, "Privada", "La cámara nunca sale del teléfono y no se guarda video.", Mira.Warm2)
         }
         VSpace(8.dp)
+    }
+
+    if (confirmBundled) {
+        AlertDialog(
+            onDismissRequest = { confirmBundled = false },
+            title = { Text("¿Usar el modelo incluido?") },
+            text = {
+                Text("Se borrará de este teléfono el modelo que cargaste y la app volverá a usar el que trae " +
+                    "incluido. Si después lo quieres de vuelta, tendrás que cargar el archivo otra vez.")
+            },
+            confirmButton = {
+                TextButton(onClick = { confirmBundled = false; actions.onUseBundled() }) { Text("Sí, usar el incluido") }
+            },
+            dismissButton = { TextButton(onClick = { confirmBundled = false }) { Text("Cancelar") } },
+            containerColor = Mira.Surface,
+        )
+    }
+}
+
+/** Fila con interruptor: se puede tocar toda la fila y TalkBack la lee como un solo interruptor. */
+@Composable
+private fun SwitchRow(title: String, text: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onChange)
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, color = Mira.Text)
+            Text(text, color = Mira.Text3, fontSize = 13.sp)
+        }
+        Spacer(Modifier.width(12.dp))
+        Switch(
+            checked = checked, onCheckedChange = null,
+            colors = SwitchDefaults.colors(
+                checkedTrackColor = Mira.Accent, checkedThumbColor = Color.White,
+                // Apagado con los colores de la app (si no, Material usa un lila que no es nuestro)
+                uncheckedTrackColor = Mira.Surface3, uncheckedThumbColor = Mira.Text3, uncheckedBorderColor = Mira.Text3,
+            ),
+        )
     }
 }

@@ -1,8 +1,11 @@
 package mx.miratek.senas
 
 import android.app.Application
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -15,6 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import mx.miratek.senas.camera.HandAnalyzer
+import mx.miratek.senas.camera.HandsFrame
 import mx.miratek.senas.core.FrameHands
 import mx.miratek.senas.core.LiveRecognizer
 import mx.miratek.senas.core.ModelFormatException
@@ -28,8 +32,12 @@ import mx.miratek.senas.data.LearnSign
 import mx.miratek.senas.data.ModelRepository
 import mx.miratek.senas.data.Speaker
 
-/** Manos del ultimo frame (para dibujar el esqueleto). */
-data class HandsFrame(val hands: FrameHands, val width: Int, val height: Int)
+/** Los modos del traductor en orden: Palabras, Deletreo, Numeros. */
+private val MODE_ORDER = listOf(SignInfo.CATEGORY_WORDS, SignInfo.CATEGORY_LETTERS, SignInfo.CATEGORY_NUMBERS)
+
+/** Los modos que el modelo sabe reconocer (si no tiene letras, no hay "Deletreo"). */
+fun modesOf(model: SignModel): List<String> =
+    MODE_ORDER.filter { cat -> model.signs.any { it.category == cat && !it.isNothing } }
 
 data class UiState(
     val loading: Boolean = true,
@@ -41,10 +49,12 @@ data class UiState(
     val sensitivity: Sensitivity = Sensitivity.MEDIUM,
     val autoSpeak: Boolean = true,
     val frontCamera: Boolean = true,
+    val leftHanded: Boolean = false,  // hace las senas con la mano izquierda
     val cameraError: String? = null,
     val cameraKey: Int = 0,           // cambia para volver a abrir la camara
     val hasUserModel: Boolean = false,
     val hasBundledModel: Boolean = false,
+    val usingUserModel: Boolean = false,  // el modelo activo es el que la persona cargo
     // Aprender y perfil
     val learn: List<LearnSign> = emptyList(),
     val practiced: Set<String> = emptySet(),
@@ -55,6 +65,12 @@ data class UiState(
     val practiceHint: String? = null,
 ) {
     fun modelKnows(signId: String) = model?.signs?.any { it.id == signId } == true
+
+    /** Los modos que el traductor puede ofrecer con el modelo actual. */
+    val modes: List<String> get() = model?.let(::modesOf).orEmpty()
+
+    /** El modo elegido; si el modelo no lo conoce, el primero que si. */
+    val activeMode: String get() = mode.takeIf { it in modes } ?: modes.firstOrNull() ?: mode
 }
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -73,6 +89,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 .getOrDefault(Sensitivity.MEDIUM),
             autoSpeak = prefs.getBoolean("autoSpeak", true),
             frontCamera = prefs.getBoolean("frontCamera", true),
+            leftHanded = prefs.getBoolean("leftHanded", false),
             practiced = prefs.getStringSet("practiced", emptySet())!!.toSet(),
             profileName = prefs.getString("profileName", "Usuario")!!,
         )
@@ -85,36 +102,51 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val messages: SharedFlow<String> = _messages.asSharedFlow()
 
-    val analyzer: HandAnalyzer by lazy {
-        HandAnalyzer(getApplication(), ::onHands) { error -> _state.update { it.copy(cameraError = error) } }
-    }
+    /** Crearlo es barato: MediaPipe se carga en prepare() (ver init) o con el primer frame. */
+    val analyzer = HandAnalyzer(app, ::onHands, ::reportCameraError)
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
             setModel(repo.load())
             val learn = runCatching { learnRepo.load() }.getOrDefault(emptyList())
             _state.update { it.copy(learn = learn) }
-            analyzer  // prepara MediaPipe antes de que se abra la camara
+        }
+        prepareDetector()
+    }
+
+    /**
+     * MediaPipe tarda ~1 s en cargar: se prepara aqui, nunca en el hilo principal.
+     * Si falla, solo se muestra la tarjeta de la camara para intentar de nuevo.
+     */
+    private fun prepareDetector(retry: Boolean = false) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val ready = runCatching { analyzer.prepare(retry) }.getOrDefault(false)
+            if (!ready) reportCameraError(HandAnalyzer.DETECTOR_UNAVAILABLE)
         }
     }
 
     private fun setModel(model: SignModel?) {
+        val current = _state.value
         synchronized(lock) {
             recognizer = model?.let {
-                LiveRecognizer(it, sensitivity = _state.value.sensitivity).apply {
-                    setAllowedCategory(allowedFor(_state.value.mode, it))
+                LiveRecognizer(it, sensitivity = current.sensitivity, mirror = current.leftHanded).apply {
+                    setAllowedCategory(allowedFor(current.mode, it))
                 }
             }
             phrase.clear()
         }
         _state.update {
             it.copy(loading = false, model = model, phrase = emptyList(), prediction = null,
-                hasUserModel = repo.hasUserModel, hasBundledModel = repo.hasBundledModel)
+                hasUserModel = repo.hasUserModel, hasBundledModel = repo.hasBundledModel,
+                usingUserModel = model != null && repo.usingUserModel)
         }
     }
 
-    private fun allowedFor(mode: String, model: SignModel): String? =
-        mode.takeIf { m -> model.signs.any { it.category == m && !it.isNothing } }
+    /** La categoria que compite en el modo elegido (o la primera que el modelo conoce). */
+    private fun allowedFor(mode: String, model: SignModel): String? {
+        val modes = modesOf(model)
+        return mode.takeIf { it in modes } ?: modes.firstOrNull()
+    }
 
     private fun onHands(hands: FrameHands, t: Double, width: Int, height: Int) {
         _hands.value = HandsFrame(hands, width, height)
@@ -129,7 +161,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 return
             }
             val speak = _state.value.autoSpeak
-            if (prediction != null && (!prediction.handsVisible || prediction.sign?.isNothing == true)) {
+            // La palabra deletreada se cierra cuando ya lleva un rato sin sena
+            // (no con una sola prediccion de "Nada" ni con un frame sin manos)
+            if (prediction?.wordBreak == true) {
                 phrase.close()?.let { finished -> if (speak) speaker.speak(finished) }
             }
             if (event != null) {
@@ -219,9 +253,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(autoSpeak = on) }
     }
 
+    /** Con la mano izquierda las senas se reflejan como espejo antes de reconocerlas. */
+    fun setLeftHanded(on: Boolean) {
+        prefs.edit().putBoolean("leftHanded", on).apply()
+        synchronized(lock) {
+            recognizer?.mirror = on
+            recognizer?.reset()
+        }
+        _state.update { it.copy(leftHanded = on, prediction = null) }
+    }
+
     fun setFrontCamera(front: Boolean) {
         prefs.edit().putBoolean("frontCamera", front).apply()
         synchronized(lock) { recognizer?.reset() }
+        forgetHands()
         _state.update { it.copy(frontCamera = front) }
     }
 
@@ -231,12 +276,41 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun retryCamera() {
         synchronized(lock) { recognizer?.reset() }
-        _state.update { it.copy(cameraError = null, cameraKey = it.cameraKey + 1) }
+        forgetHands()
+        _state.update { it.copy(cameraError = null, cameraKey = it.cameraKey + 1, prediction = null) }
+        prepareDetector(retry = true)  // si el detector de manos no habia cargado, se intenta otra vez
+    }
+
+    /** La camara se cerro (otra pantalla u otra camara): que no quede dibujada una mano vieja. */
+    fun onCameraClosed() {
+        synchronized(lock) { recognizer?.reset() }
+        forgetHands()
+        _state.update { it.copy(prediction = null) }
+    }
+
+    private fun forgetHands() {
+        _hands.value = null
+        analyzer.resetTracking()
     }
 
     fun speakPhrase() {
+        val text = phraseText("Todavía no hay nada que leer.") ?: return
+        speaker.speak(text)
+    }
+
+    /** El texto de la frase, o null (con un aviso) si todavia no hay nada. */
+    fun phraseText(emptyMessage: String = "Todavía no hay una frase."): String? {
         val text = synchronized(lock) { phrase.sentence() }
-        if (text.isBlank()) message("Todavía no hay nada que leer.") else speaker.speak(text)
+        if (text.isBlank()) message(emptyMessage)
+        return text.takeIf { it.isNotBlank() }
+    }
+
+    fun copyPhrase() {
+        val text = phraseText("Todavía no hay nada que copiar.") ?: return
+        val clipboard = getApplication<Application>().getSystemService(ClipboardManager::class.java) ?: return
+        clipboard.setPrimaryClip(ClipData.newPlainText("Frase", text))
+        // Desde Android 13 el telefono ya avisa que se copio
+        if (Build.VERSION.SDK_INT < 33) message("Frase copiada.")
     }
 
     fun deleteLast() {
@@ -278,7 +352,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
-        runCatching { analyzer.close() }
+        analyzer.close()  // si MediaPipe nunca cargo, no hay nada que cerrar
         speaker.shutdown()
     }
 }

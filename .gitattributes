@@ -1,2 +1,10 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+# Los .bat los lee cmd.exe: siempre con finales CRLF
+*.bat text eol=crlf
+# Binarios
+*.png binary
+*.ico binary
+*.task binary
+*.jks binary
+*.npz binary

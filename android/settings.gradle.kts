@@ -15,4 +15,6 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "MiraTek"
-include(":app")
+include(":core")      // lo que comparten las dos apps
+include(":app")       // Mira&Tek (traductor)
+include(":trainer")   // Mira&Tek Entrenador (grabar y entrenar en el celular)

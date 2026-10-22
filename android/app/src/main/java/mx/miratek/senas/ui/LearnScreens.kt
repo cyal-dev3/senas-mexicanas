@@ -36,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -75,7 +76,9 @@ fun LearnScreen(state: UiState, onOpen: (String) -> Unit) {
     StatusBarIcons(light = false)
     var category by rememberSaveable { mutableStateOf(SignInfo.CATEGORY_WORDS) }
     val signs = state.learnList(category)
-    val done = signs.count { it.id in state.practiced }
+    // El progreso cuenta solo las que se pueden practicar (las que el modelo conoce)
+    val practicable = signs.filter { state.modelKnows(it.id) }
+    val done = practicable.count { it.id in state.practiced }
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         modifier = Modifier.fillMaxSize().background(Mira.Bg),
@@ -90,7 +93,12 @@ fun LearnScreen(state: UiState, onOpen: (String) -> Unit) {
                 VSpace(14.dp)
                 SegmentedPills(CATEGORY_TITLES.toList(), category, { category = it }, Modifier.fillMaxWidth())
                 VSpace(12.dp)
-                ProgressLine(done, signs.size, "practicadas")
+                if (practicable.isNotEmpty()) {
+                    ProgressLine(done, practicable.size, "practicadas")
+                } else if (signs.isNotEmpty()) {
+                    Text("Estas señas todavía no se pueden practicar con la cámara; mira cómo se hacen.",
+                        color = Mira.Text3, fontSize = 13.sp)
+                }
             }
         }
         items(signs, key = { it.id }) { sign ->
@@ -163,56 +171,59 @@ fun SignDetailScreen(state: UiState, signId: String, onBack: () -> Unit, onPract
     val sign = state.learn.firstOrNull { it.id == signId } ?: return
     val list = state.learnList(sign.category)
     val index = list.indexOfFirst { it.id == signId }
-    Column(
-        Modifier.fillMaxSize().background(Mira.Bg).verticalScroll(rememberScrollState())
-            .statusBarsPadding().padding(horizontal = 18.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconCircleButton(MiraIcons.Back, "Regresar", onBack)
-            Spacer(Modifier.width(12.dp))
-            StatPill(CATEGORY_TITLES[sign.category] ?: "")
-            Spacer(Modifier.weight(1f))
-            if (sign.id in state.practiced) StatPill("Practicada ✓", Mira.Green)
-        }
-        Text(sign.name, fontSize = if (sign.category == SignInfo.CATEGORY_WORDS) 40.sp else 64.sp,
-            fontWeight = FontWeight.ExtraBold, color = Mira.Text)
-        SkeletonAnimation(sign.clip, Modifier.fillMaxWidth().aspectRatio(1.15f))
-        Text(
-            sign.clip?.let { "Grabada por ${it.signer}. Imítala como si te vieras en un espejo." }
-                ?: "Todavía no hay una grabación de esta seña.",
-            color = Mira.Text3, fontSize = 13.sp,
-        )
-        GlassCard(Modifier.fillMaxWidth(), alpha = 1f) {
-            Overline("Cómo se hace")
-            VSpace(8.dp)
-            if (sign.pending) {
-                Text("Todavía no tenemos la descripción escrita de esta seña. Imita la animación; pronto " +
-                    "agregaremos las instrucciones.", color = Mira.Text2, style = MaterialTheme.typography.bodyLarge)
+    // Cada sena empieza desde arriba: al pasar a la siguiente no se queda el scroll viejo
+    key(signId) {
+        Column(
+            Modifier.fillMaxSize().background(Mira.Bg).verticalScroll(rememberScrollState())
+                .statusBarsPadding().padding(horizontal = 18.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconCircleButton(MiraIcons.Back, "Regresar", onBack)
+                Spacer(Modifier.width(12.dp))
+                StatPill(CATEGORY_TITLES[sign.category] ?: "")
+                Spacer(Modifier.weight(1f))
+                if (sign.id in state.practiced) StatPill("Practicada ✓", Mira.Green)
+            }
+            Text(sign.name, fontSize = if (sign.category == SignInfo.CATEGORY_WORDS) 40.sp else 64.sp,
+                fontWeight = FontWeight.ExtraBold, color = Mira.Text)
+            SkeletonAnimation(sign.clip, Modifier.fillMaxWidth().aspectRatio(1.15f))
+            Text(
+                sign.clip?.let { "Grabada por ${it.signer}. Imítala como si te vieras en un espejo." }
+                    ?: "Todavía no hay una grabación de esta seña.",
+                color = Mira.Text3, fontSize = 13.sp,
+            )
+            GlassCard(Modifier.fillMaxWidth(), alpha = 1f) {
+                Overline("Cómo se hace")
+                VSpace(8.dp)
+                if (sign.pending) {
+                    Text("Todavía no tenemos la descripción escrita de esta seña. Imita la animación; pronto " +
+                        "agregaremos las instrucciones.", color = Mira.Text2, style = MaterialTheme.typography.bodyLarge)
+                } else {
+                    Text(sign.text, color = Mira.Text, style = MaterialTheme.typography.bodyLarge)
+                    sign.alt?.let {
+                        VSpace(10.dp)
+                        Text(it, color = Mira.Text2, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                VSpace(12.dp)
+                Text(sign.sourceLabel, color = Mira.Text3, fontSize = 12.sp)
+            }
+            if (state.modelKnows(sign.id)) {
+                PrimaryButton("Practicar con la cámara", { onPractice(sign.id) }, Modifier.fillMaxWidth(), MiraIcons.Play)
             } else {
-                Text(sign.text, color = Mira.Text, style = MaterialTheme.typography.bodyLarge)
-                sign.alt?.let {
-                    VSpace(10.dp)
-                    Text(it, color = Mira.Text2, style = MaterialTheme.typography.bodyMedium)
+                Text("Para practicarla con la cámara, primero hay que grabarla y entrenar el modelo en la PC.",
+                    color = Mira.Text3, fontSize = 13.sp)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (index > 0) SecondaryButton("Anterior", { onOpen(list[index - 1].id) }, icon = MiraIcons.ChevronLeft)
+                Spacer(Modifier.weight(1f))
+                if (index in 0 until list.size - 1) {
+                    SecondaryButton("Siguiente", { onOpen(list[index + 1].id) }, icon = MiraIcons.ChevronRight)
                 }
             }
-            VSpace(12.dp)
-            Text(sign.sourceLabel, color = Mira.Text3, fontSize = 12.sp)
+            VSpace(8.dp)
         }
-        if (state.modelKnows(sign.id)) {
-            PrimaryButton("Practicar con la cámara", { onPractice(sign.id) }, Modifier.fillMaxWidth(), MiraIcons.Play)
-        } else {
-            Text("Para practicarla con la cámara, primero hay que grabarla y entrenar el modelo en la PC.",
-                color = Mira.Text3, fontSize = 13.sp)
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (index > 0) SecondaryButton("Anterior", { onOpen(list[index - 1].id) }, icon = MiraIcons.ChevronLeft)
-            Spacer(Modifier.weight(1f))
-            if (index in 0 until list.size - 1) {
-                SecondaryButton("Siguiente", { onOpen(list[index + 1].id) }, icon = MiraIcons.ChevronRight)
-            }
-        }
-        VSpace(8.dp)
     }
 }
 
@@ -235,7 +246,7 @@ fun PracticeScreen(vm: MainViewModel, state: UiState, signId: String, onExit: ()
     ) {
         CameraPreview(
             front = state.frontCamera, analyzer = vm.analyzer, onError = vm::reportCameraError,
-            modifier = Modifier.fillMaxSize(), restartKey = state.cameraKey,
+            modifier = Modifier.fillMaxSize(), restartKey = state.cameraKey, onClosed = vm::onCameraClosed,
         )
         HandOverlay(vm.hands, state.frontCamera, Modifier.fillMaxSize())
     }

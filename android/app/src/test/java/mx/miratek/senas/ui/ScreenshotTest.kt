@@ -34,19 +34,20 @@ class ScreenshotTest {
         maxPercentDifference = 100.0,
     )
 
-    private val model by lazy {
-        SignModel.fromJson(javaClass.classLoader!!.getResource("parity/model.json")!!.readText())
-    }
+    // Los vectores de paridad viven en el modulo core (misma carpeta que sus pruebas)
+    private val parity = File("../core/src/test/resources/parity")
+
+    private val model by lazy { SignModel.fromJson(File(parity, "model.json").readText()) }
 
     /** Las senas de "Aprender" tal como van en la APK (las animaciones solo si ya se generaron). */
     private val learn by lazy {
         val info = File("../../assets/senas_info.json").readText()
-        val clips = File("src/main/assets/learn_clips.json").takeIf { it.exists() }?.readText()
+        val clips = File("../../assets/learn_clips.json").takeIf { it.exists() }?.readText()
         LearnRepository.parse(info, clips)
     }
 
     private val handPoints: List<Offset> by lazy {
-        val case = JSONObject(javaClass.classLoader!!.getResource("parity/features.json")!!.readText())
+        val case = JSONObject(File(parity, "features.json").readText())
             .getJSONArray("cases").getJSONObject(0)
         val frame = case.getJSONArray("image").getJSONArray(32)
         val slot = if (frame.isNull(63)) 0 else 1
@@ -146,7 +147,15 @@ class ScreenshotTest {
 
     @Test
     fun settings() {
-        val state = baseState().copy(hasUserModel = true, hasBundledModel = true)
+        val state = baseState().copy(hasUserModel = true, hasBundledModel = true, usingUserModel = true)
+        paparazzi.snapshot { MiraTekTheme { WithNav(Tab.SETTINGS) { SettingsContent(state, SettingsActions()) } } }
+    }
+
+    @Test
+    fun settingsLeftHanded() {
+        // Pantalla alta para que se vea completa la tarjeta de reconocimiento (con el modelo incluido)
+        paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_6.copy(screenHeight = 4300))
+        val state = baseState().copy(hasBundledModel = true, leftHanded = true)
         paparazzi.snapshot { MiraTekTheme { WithNav(Tab.SETTINGS) { SettingsContent(state, SettingsActions()) } } }
     }
 

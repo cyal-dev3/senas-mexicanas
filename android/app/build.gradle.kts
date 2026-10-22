@@ -23,8 +23,8 @@ android {
         applicationId = "mx.miratek.senas"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "2.1.0"
+        versionCode = 4
+        versionName = "2.2.0"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
 
@@ -60,18 +60,13 @@ android {
     testOptions { unitTests.isReturnDefaultValues = true }
 }
 
-// El detector de manos y las instrucciones de las senas viven en assets/ (raiz del
-// repo) y los comparten la PC y el celular: Gradle los copia a la APK al compilar.
-val handModelDir = layout.buildDirectory.dir("generated/miratek-assets")
-val copyHandModel by tasks.registering(Copy::class) {
-    from(rootProject.file("../assets/hand_landmarker.task"))
-    from(rootProject.file("../assets/senas_info.json"))  // como se hace cada sena (Aprender)
-    into(handModelDir)
-}
-android.sourceSets.getByName("main").assets.srcDir(handModelDir)
-tasks.named("preBuild") { dependsOn(copyHandModel) }
+// El detector de manos, las instrucciones y las animaciones vienen del modulo core
+// (ver core/build.gradle.kts). Aqui solo va el modelo: assets/modelo_android.json,
+// que exporta tools/build_apk.py desde el modelo entrenado en esta PC.
 
 dependencies {
+    implementation(project(":core"))
+
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")
@@ -84,14 +79,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
-
-    val camerax = "1.4.1"
-    implementation("androidx.camera:camera-core:$camerax")
-    implementation("androidx.camera:camera-camera2:$camerax")
-    implementation("androidx.camera:camera-lifecycle:$camerax")
-    implementation("androidx.camera:camera-view:$camerax")
-
-    implementation("com.google.mediapipe:tasks-vision:0.10.35")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")

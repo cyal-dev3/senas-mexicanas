@@ -1,5 +1,7 @@
 package mx.miratek.senas.ui
 
+import android.content.Context
+import android.content.Intent
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -25,19 +27,25 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -62,26 +70,37 @@ class TranslatorActions(
     val onSwitchCamera: () -> Unit = {},
     val onLoadModel: () -> Unit = {},
     val onRetryCamera: () -> Unit = {},
+    val onShare: () -> Unit = {},
+    val onCopy: () -> Unit = {},
 )
 
 @Composable
 fun TranslatorScreen(vm: MainViewModel, onLoadModel: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     StatusBarIcons(light = true)
-    val actions = remember(vm) {
+    val actions = remember(vm, context) {
         TranslatorActions(
             onMode = vm::setMode, onDeleteLast = vm::deleteLast, onClear = vm::clearPhrase,
             onSpeak = vm::speakPhrase, onSwitchCamera = { vm.setFrontCamera(!vm.state.value.frontCamera) },
             onLoadModel = onLoadModel, onRetryCamera = vm::retryCamera,
+            onShare = { vm.phraseText("Todavía no hay nada que compartir.")?.let { shareText(context, it) } },
+            onCopy = vm::copyPhrase,
         )
     }
     TranslatorContent(state, actions) {
         CameraPreview(
             front = state.frontCamera, analyzer = vm.analyzer, onError = vm::reportCameraError,
-            modifier = Modifier.fillMaxSize(), restartKey = state.cameraKey,
+            modifier = Modifier.fillMaxSize(), restartKey = state.cameraKey, onClosed = vm::onCameraClosed,
         )
         HandOverlay(vm.hands, state.frontCamera, Modifier.fillMaxSize())
     }
+}
+
+/** Abre la hoja de compartir de Android (WhatsApp, mensajes, correo...) con el texto. */
+private fun shareText(context: Context, text: String) {
+    val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
+    runCatching { context.startActivity(Intent.createChooser(send, "Compartir frase")) }
 }
 
 /**
@@ -106,9 +125,13 @@ fun TranslatorContent(state: UiState, actions: TranslatorActions, camera: @Compo
                     tint = Mira.Text, background = Mira.Surface.copy(alpha = 0.92f), size = 42.dp)
             }
             if (state.model != null) {
-                Spacer(Modifier.height(10.dp))
-                SegmentedPills(MODES, state.mode, actions.onMode,
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Mira.Surface.copy(alpha = 0.9f)))
+                // Solo los modos que el modelo conoce (sin letras no hay "Deletreo")
+                val modes = MODES.filter { it.first in state.modes }
+                if (modes.size > 1) {
+                    Spacer(Modifier.height(10.dp))
+                    SegmentedPills(modes, state.activeMode, actions.onMode,
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Mira.Surface.copy(alpha = 0.9f)))
+                }
                 Spacer(Modifier.height(10.dp))
                 GuessPill(state, Modifier.align(Alignment.CenterHorizontally))
             }
@@ -186,8 +209,9 @@ fun GuessPill(state: UiState, modifier: Modifier = Modifier) {
 @Composable
 private fun SubtitleBar(state: UiState, actions: TranslatorActions) {
     val glow = remember { Animatable(0f) }
+    val firstCount = remember { state.eventCount }  // al entrar no destella: solo con senas nuevas
     LaunchedEffect(state.eventCount) {
-        if (state.eventCount > 0) {
+        if (state.eventCount != firstCount) {
             glow.snapTo(1f)
             glow.animateTo(0f, tween(700))
         }
@@ -206,8 +230,33 @@ private fun SubtitleBar(state: UiState, actions: TranslatorActions) {
             PhraseChips(state.phrase, Modifier.weight(1f))
             IconCircleButton(MiraIcons.Speaker, "Leer en voz alta", actions.onSpeak, tint = Color.White,
                 background = Mira.Accent, size = 42.dp)
+            ShareButton(actions.onShare, actions.onCopy)
             IconCircleButton(MiraIcons.Backspace, "Borrar lo último", actions.onDeleteLast, tint = Mira.Text2, size = 42.dp)
             IconCircleButton(MiraIcons.Close, "Borrar todo", actions.onClear, tint = Mira.Text2, size = 42.dp)
+        }
+    }
+}
+
+/** Compartir la frase (WhatsApp, mensajes...) o copiarla para pegarla en otra app. */
+@Composable
+private fun ShareButton(onShare: () -> Unit, onCopy: () -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconCircleButton(MiraIcons.Share, "Compartir o copiar la frase", { open = true }, tint = Mira.Text2, size = 42.dp)
+        DropdownMenu(
+            expanded = open, onDismissRequest = { open = false },
+            shape = RoundedCornerShape(18.dp), containerColor = Mira.Surface,
+        ) {
+            DropdownMenuItem(
+                text = { Text("Compartir", color = Mira.Text, fontSize = 16.sp) },
+                leadingIcon = { Icon(MiraIcons.Share, contentDescription = null, tint = Mira.Text2, modifier = Modifier.size(20.dp)) },
+                onClick = { open = false; onShare() },
+            )
+            DropdownMenuItem(
+                text = { Text("Copiar", color = Mira.Text, fontSize = 16.sp) },
+                leadingIcon = { Icon(MiraIcons.Copy, contentDescription = null, tint = Mira.Text2, modifier = Modifier.size(20.dp)) },
+                onClick = { open = false; onCopy() },
+            )
         }
     }
 }
@@ -219,7 +268,7 @@ fun CameraErrorCard(message: String, onRetry: () -> Unit) {
         VSpace(6.dp)
         Text(message, style = MaterialTheme.typography.bodyMedium, color = Mira.Text)
         VSpace(12.dp)
-        SecondaryButton("Reintentar", onRetry, Modifier.fillMaxWidth(), MiraIcons.FlipCamera)
+        SecondaryButton("Intentar de nuevo", onRetry, Modifier.fillMaxWidth(), MiraIcons.FlipCamera)
     }
 }
 
@@ -239,3 +288,5 @@ private fun NoModelCard(onLoadModel: () -> Unit) {
         PrimaryButton("Cargar modelo", onLoadModel, Modifier.fillMaxWidth(), MiraIcons.Folder)
     }
 }
+
+// Iconos que solo usa el traductor (trazos de Material, igual que MiraIcons)

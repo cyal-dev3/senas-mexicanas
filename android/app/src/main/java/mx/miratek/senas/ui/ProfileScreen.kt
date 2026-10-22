@@ -62,18 +62,20 @@ private class Plan(
     val style: PlanStyle,
 )
 
-// Los mismos planes que tenia el diseno original del equipo
+// Los planes del diseno original del equipo. Hoy todo es gratis y funciona sin internet:
+// PRO y ALIADO solo suman cosas nuevas cuando lleguen, no le quitan nada al plan gratis.
 private val PLANS = listOf(
-    Plan("INCLUSIÓN", MiraIcons.Hand, null, "Gratis", null, "Lo esencial para empezar",
-        listOf("Uso esencial en tiempo real", "Requiere conexión a internet", "Diccionario ABC y Números"),
+    Plan("INCLUSIÓN", MiraIcons.Hand, null, "Gratis", null, "Todo lo que hoy tiene la app",
+        listOf("Traductor de señas en tiempo real", "Toda la sección Aprender: palabras, abecedario y números",
+            "Funciona sin internet", "La cámara nunca sale de tu teléfono"),
         current = true, style = PlanStyle.PLAIN),
-    Plan("PRO", MiraIcons.Star, "RECOMENDADO", "\$89", "/mes", "Comunicación sin límites",
-        listOf("Todo lo del plan Gratuito", "Uso Offline (Sin internet)", "Sin anuncios publicitarios",
-            "Contenido de señas avanzado"),
+    Plan("PRO", MiraIcons.Star, "RECOMENDADO", "\$89", "/mes", "Para comunicarte cada día más",
+        listOf("Todo lo del plan Inclusión", "Más señas y frases nuevas", "Prácticas con más niveles",
+            "También funciona sin internet"),
         current = false, style = PlanStyle.HIGHLIGHT),
-    Plan("ALIADO", MiraIcons.Heart, "PREMIUM SOCIAL", "\$149", "/mes", "Impacto social y total",
-        listOf("Todo lo del plan PRO", "Apoyo directo a ONGs Sordas", "Acceso total educativo",
-            "Soporte prioritario 24/7"),
+    Plan("ALIADO", MiraIcons.Heart, "PREMIUM SOCIAL", "\$149", "/mes", "Para apoyar a la comunidad Sorda",
+        listOf("Todo lo del plan PRO", "Apoyo a asociaciones de personas Sordas",
+            "Material para enseñar LSM en escuelas y familias"),
         current = false, style = PlanStyle.PREMIUM),
 )
 
@@ -88,7 +90,9 @@ fun ProfileScreen(state: UiState, onRename: (String) -> Unit) {
     StatusBarIcons(light = false)
     var editing by remember { mutableStateOf(false) }
     var chosen by remember { mutableStateOf<String?>(null) }
-    val learnable = state.learn.filter { it.id != SignInfo.NOTHING_ID }
+    // Solo cuentan las senas que se pueden practicar con la camara (las que el modelo conoce)
+    val known = state.model?.signs?.map { it.id }?.toSet().orEmpty()
+    val learnable = state.learn.filter { it.id != SignInfo.NOTHING_ID && it.id in known }
     val done = learnable.count { it.id in state.practiced }
 
     Column(Modifier.fillMaxSize().background(Mira.Bg).verticalScroll(rememberScrollState())) {
@@ -137,7 +141,9 @@ fun ProfileScreen(state: UiState, onRename: (String) -> Unit) {
         VSpace(22.dp)
         Text("Elige el plan que mejor se adapte a ti", color = Mira.Text2, fontSize = 16.sp,
             textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-        VSpace(16.dp)
+        Text("Hoy todo es gratis. PRO y ALIADO llegarán con Mira&Tek en Google Play.", color = Mira.Text3,
+            fontSize = 13.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp))
+        VSpace(12.dp)
         val pager = rememberPagerState { PLANS.size }
         HorizontalPager(pager, contentPadding = PaddingValues(horizontal = 30.dp), pageSpacing = 14.dp) { page ->
             PlanCard(PLANS[page]) { chosen = PLANS[page].badge }

@@ -193,3 +193,18 @@ capturas/
 # Grabaciones recibidas (datos personales: no se suben a GitHub)
 recordings/
 android/app/src/main/assets/learn_clips.json
+android/core/build/
+android/trainer/build/
+android/.kotlin/
+android/*/.kotlin/
+.idea/
+*.iml
+# Llaves de firma, en cualquier lugar
+*.jks
+*.keystore
+keystore.properties
+# Paquetes de grabaciones (datos personales) y APK sueltas
+MiraTek_*.zip
+*.apk
+# Animaciones de "Aprender": se generan con tools/make_learn_assets.py desde las grabaciones
+assets/learn_clips.json
