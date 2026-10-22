@@ -55,3 +55,9 @@ class Page(QWidget):
 
     def on_leave(self):
         """La pantalla se oculta."""
+
+    def on_pause(self):
+        """La app quedo en pausa (Ajustes abierto, otra ventana activa o minimizada)."""
+
+    def on_resume(self):
+        """La persona regreso a la app."""

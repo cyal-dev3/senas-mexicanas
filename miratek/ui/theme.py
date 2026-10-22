@@ -236,7 +236,6 @@ def stylesheet():
         background: {SURFACE}; border: 1px solid {BORDER}; selection-background-color: {SURFACE_2};
         selection-color: {TEXT}; outline: none; padding: 4px;
     }}
-    QSpinBox::up-button, QSpinBox::down-button {{ width: 0; border: none; }}
     QCheckBox {{ spacing: 10px; }}
     QCheckBox::indicator {{
         width: 20px; height: 20px; border-radius: 6px; border: 1px solid {BORDER}; background: {SURFACE};

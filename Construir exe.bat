@@ -3,6 +3,12 @@ rem Construye dist\MiraTek.exe (la app de PC para grabar y entrenar).
 cd /d "%~dp0"
 if not exist .venv\Scripts\python.exe (
     echo Creando entorno de Python...
+    python -c "import sys; sys.exit(0 if (3, 10) <= sys.version_info[:2] <= (3, 14) else 1)" 2>nul
+    if errorlevel 1 (
+        echo Se necesita Python 3.10 a 3.14 ^(MediaPipe y PySide6 todavia no funcionan con versiones mas nuevas^).
+        echo Instala Python 3.12 desde python.org y vuelve a intentar.
+        goto :error
+    )
     python -m venv .venv || goto :error
 )
 .venv\Scripts\python.exe -m pip install -q -r requirements.txt -r requirements-dev.txt || goto :error

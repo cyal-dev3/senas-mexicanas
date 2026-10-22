@@ -11,8 +11,9 @@ log = logging.getLogger(__name__)
 
 
 class AppContext(QObject):
-    data_changed = Signal()    # se grabaron, borraron o importaron clips
-    model_changed = Signal()   # hay un modelo nuevo
+    data_changed = Signal()      # se grabaron, borraron o importaron clips
+    model_changed = Signal()     # hay un modelo nuevo
+    settings_changed = Signal()  # cambiaron los ajustes (persona, mano, meta...)
 
     def __init__(self, settings, store, camera, demo=False):
         super().__init__()
@@ -52,6 +53,25 @@ class AppContext(QObject):
             self.model_path.replace(self.model_path.with_name("modelo_anterior.npz"))
         path.replace(self.model_path)
         self.model_changed.emit()
+
+    def clips_since_model(self):
+        """Cuantas grabaciones (de todas las personas) son mas nuevas que el modelo actual."""
+        clips = self.store.list_clips()
+        try:
+            stamp = self.model_path.stat().st_mtime
+        except FileNotFoundError:
+            return len(clips)
+        newer = 0
+        for ref in clips:
+            try:
+                newer += ref.path.stat().st_mtime > stamp
+            except OSError:
+                pass  # se borro mientras contabamos
+        return newer
+
+    def needs_training(self):
+        """True si no hay modelo o si hay grabaciones que el modelo todavia no conoce."""
+        return self.model() is None or self.clips_since_model() > 0
 
     def signer_counts(self):
         return self.store.counts(self.settings.signer_id)

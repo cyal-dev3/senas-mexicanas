@@ -1,5 +1,6 @@
 """Piezas visuales reutilizables (tarjetas, anillos de progreso, video, avisos)."""
 
+import html
 import math
 import time
 
@@ -8,7 +9,7 @@ from PySide6.QtCore import (QEasingCurve, QPoint, QPointF, QPropertyAnimation, Q
 from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QFont, QFontMetrics, QLinearGradient, QPainter,
                            QPainterPath, QPen)
 from PySide6.QtWidgets import (QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLayout,
-                               QPushButton, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget)
+                               QPushButton, QScrollArea, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget)
 
 from ..hands import HAND_CONNECTIONS, LEFT, RIGHT
 from . import theme
@@ -20,6 +21,9 @@ from . import theme
 
 def label(text="", role=None, wrap=False, align=None):
     lbl = QLabel(text)
+    # Texto simple: un nombre como "<b>Ana</b>" (de un archivo recibido) no se interpreta como HTML.
+    # Quien necesite formato lo pide con setTextFormat(RichText).
+    lbl.setTextFormat(Qt.TextFormat.PlainText)
     if role:
         lbl.setProperty("role", role)
     lbl.setWordWrap(wrap)
@@ -46,6 +50,21 @@ def restyle(widget):
     """Vuelve a aplicar el estilo despues de cambiar una propiedad."""
     widget.style().unpolish(widget)
     widget.style().polish(widget)
+
+
+def side_scroll(widget, min_width=290, max_width=380):
+    """Panel lateral con scroll: en pantallas chicas se desplaza en vez de cortarse."""
+    area = QScrollArea()
+    area.setWidgetResizable(True)
+    area.setFrameShape(QFrame.Shape.NoFrame)
+    area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    area.setWidget(widget)
+    # Nunca mas angosto que su contenido (no hay scroll horizontal): +12 de la barra de scroll
+    min_width = max(min_width, widget.minimumSizeHint().width() + 12)
+    area.setMinimumWidth(min_width)
+    area.setMaximumWidth(max(min_width, max_width))
+    area.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+    return area
 
 
 class Card(QFrame):
@@ -230,6 +249,42 @@ class Bar(QWidget):
             p.drawRoundedRect(fill, rad, rad)
 
 
+class BusyBar(QWidget):
+    """Barra que va y viene mientras algo trabaja (cuando no sabemos el porcentaje)."""
+
+    def __init__(self, height=8, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(height)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._timer = QTimer(self, interval=30)
+        self._timer.timeout.connect(self.update)
+
+    def showEvent(self, event):
+        self._timer.start()
+        super().showEvent(event)
+
+    def hideEvent(self, event):
+        self._timer.stop()
+        super().hideEvent(event)
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        r = QRectF(self.rect())
+        rad = r.height() / 2
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(theme.SURFACE_3))
+        p.drawRoundedRect(r, rad, rad)
+        seg = max(r.height(), r.width() * 0.3)
+        pos = 0.5 - 0.5 * math.cos(2 * math.pi * (time.monotonic() % 1.6) / 1.6)
+        fill = QRectF(r.left() + (r.width() - seg) * pos, r.top(), seg, r.height())
+        grad = QLinearGradient(fill.topLeft(), fill.topRight())
+        grad.setColorAt(0, QColor(theme.ACCENT))
+        grad.setColorAt(1, QColor(theme.ACCENT_2))
+        p.setBrush(grad)
+        p.drawRoundedRect(fill, rad, rad)
+
+
 class BarRow(QWidget):
     """Etiqueta + barra + valor, para porcentajes por sena."""
 
@@ -264,17 +319,19 @@ def quality_color(fraction):
 
 
 class DotsProgress(QWidget):
-    """Fila de puntos: cuantos clips llevas de la meta."""
+    """Fila de puntos: cuantos clips llevas de la meta (con metas grandes, una barra)."""
+
+    MAX_DOTS = 30
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._total = 20
         self._filled = 0
-        self.setFixedHeight(14)
+        self.setFixedHeight(16)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
     def set(self, filled, total):
-        self._filled, self._total = filled, max(1, total)
+        self._filled, self._total = max(0, filled), max(1, total)
         self.update()
 
     def paintEvent(self, _):
@@ -286,6 +343,9 @@ class DotsProgress(QWidget):
         h = 8.0
         y = (self.height() - h) / 2
         p.setPen(Qt.PenStyle.NoPen)
+        if n > self.MAX_DOTS or w < 4:
+            self._paint_bar(p, y, h)  # demasiados puntos: no caben (saldrian anchos negativos)
+            return
         for i in range(n):
             x = i * (w + gap)
             if i < self._filled:
@@ -296,6 +356,26 @@ class DotsProgress(QWidget):
             else:
                 p.setBrush(QColor(theme.SURFACE_3))
             p.drawRoundedRect(QRectF(x, y, w, h), h / 2, h / 2)
+
+    def _paint_bar(self, p, y, h):
+        text = f"{min(self._filled, self._total)} de {self._total}"
+        font = theme.ui_font(11, QFont.Weight.DemiBold)
+        p.setFont(font)
+        text_w = QFontMetrics(font).horizontalAdvance(text) + 10
+        track = QRectF(0, y, max(h, self.width() - text_w), h)
+        p.setBrush(QColor(theme.SURFACE_3))
+        p.drawRoundedRect(track, h / 2, h / 2)
+        frac = min(1.0, self._filled / self._total)
+        if frac > 0:
+            fill = QRectF(track.left(), y, max(h, track.width() * frac), h)
+            grad = QLinearGradient(track.topLeft(), track.topRight())
+            grad.setColorAt(0, QColor(theme.ACCENT))
+            grad.setColorAt(1, QColor(theme.ACCENT_2))
+            p.setBrush(grad)
+            p.drawRoundedRect(fill, h / 2, h / 2)
+        p.setPen(QColor(theme.TEXT_3))
+        p.drawText(QRectF(track.right(), 0, text_w, self.height()),
+                   Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, text)
 
 
 class Segmented(QFrame):
@@ -309,6 +389,7 @@ class Segmented(QFrame):
         lay.setContentsMargins(4, 4, 4, 4)
         lay.setSpacing(2)
         self._buttons = {}
+        self._current = current
         for key, text in options:
             b = button(text, "segment")
             bold = theme.ui_font(14, QFont.Weight.DemiBold)
@@ -319,9 +400,17 @@ class Segmented(QFrame):
             lay.addWidget(b)
             self._buttons[key] = b
 
-    def _select(self, key):
+    def value(self):
+        return self._current
+
+    def set_value(self, key):
+        """Marca una opcion sin avisar (changed no se emite)."""
+        self._current = key
         for k, b in self._buttons.items():
             b.setChecked(k == key)
+
+    def _select(self, key):
+        self.set_value(key)
         self.changed.emit(key)
 
 
@@ -430,6 +519,21 @@ def chip(text, highlight=False):
 # ============================================================
 
 class FadeStack(QStackedWidget):
+    """Pantallas que cambian con un fundido. Mide lo que mide la pantalla visible
+    (no la mas grande), para no dejar espacio vacio ni ensanchar la ventana."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.currentChanged.connect(lambda _: self.updateGeometry())
+
+    def sizeHint(self):
+        w = self.currentWidget()
+        return w.sizeHint() if w is not None else super().sizeHint()
+
+    def minimumSizeHint(self):
+        w = self.currentWidget()
+        return w.minimumSizeHint() if w is not None else super().minimumSizeHint()
+
     def fade_to(self, index):
         if index == self.currentIndex():
             return
@@ -465,6 +569,8 @@ class Toast(QLabel):
     def __init__(self, parent):
         super().__init__(parent)
         self.hide()
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip("Haz clic para cerrar")
         self._effect = QGraphicsOpacityEffect(self)
         self.setGraphicsEffect(self._effect)
         self._anim = QPropertyAnimation(self._effect, b"opacity", self)
@@ -476,12 +582,25 @@ class Toast(QLabel):
     def show_message(self, text, kind="info"):
         color = self.COLORS.get(kind, "#FFFFFF")
         glyph = theme.ICONS[self.ICONS.get(kind, "info")]
+        icons = theme.icon_family()
+        # El texto puede traer nombres de archivo o de personas: siempre como texto, nunca HTML
+        body = html.escape(text).replace("\n", "<br>")
+        close = ""
+        if kind == "error":  # los errores se quedan hasta que les den clic
+            close = (f'&nbsp;&nbsp;&nbsp;<span style="font-family:\'{icons}\'; color:#9FB3BA;">'
+                     f'{theme.ICONS["clear"]}</span>')
         self.setTextFormat(Qt.TextFormat.RichText)
-        self.setText(f'<span style="font-family:\'{theme.icon_family()}\'; color:{color};">{glyph}</span>'
-                     f'&nbsp;&nbsp;{text}')
+        self.setText(f'<span style="font-family:\'{icons}\'; color:{color};">{glyph}</span>'
+                     f'&nbsp;&nbsp;{body}{close}')
         self.setStyleSheet(f"background: {theme.TEXT}; color: white; border-radius: 16px;"
                            "padding: 12px 20px; font-size: 14px;")
+        self.setWordWrap(False)
         self.adjustSize()
+        parent = self.parentWidget()
+        limit = min(720, max(320, (parent.width() if parent else 900) - 120))
+        if self.width() > limit:  # mensaje largo: en varias lineas
+            self.setWordWrap(True)
+            self.resize(limit, self.heightForWidth(limit))
         self.reposition()
         self.raise_()
         self.show()
@@ -489,7 +608,14 @@ class Toast(QLabel):
         self._anim.setStartValue(self._effect.opacity() if self.isVisible() else 0.0)
         self._anim.setEndValue(1.0)
         self._anim.start()
-        self._timer.start()
+        if kind == "error":
+            self._timer.stop()
+        else:  # mas tiempo para leer los mensajes largos
+            self._timer.start(max(2400, min(9000, 1800 + 60 * len(text))))
+
+    def mousePressEvent(self, event):
+        self._timer.stop()
+        self._fade_out()
 
     def reposition(self):
         parent = self.parentWidget()
@@ -515,11 +641,17 @@ class VideoView(QWidget):
     """Muestra la camara con esquinas redondeadas y dibuja encima las manos."""
 
     HAND_COLORS = {RIGHT: theme.WARM, LEFT: theme.ACCENT_2}
+    retry = Signal()  # "Intentar de nuevo" despues de un error de camara
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumSize(420, 315)
+        self.setMinimumSize(240, 180)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._retry_btn = button("Intentar de nuevo", "primary", "refresh")
+        self._retry_btn.setParent(self)
+        self._retry_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # que Espacio no lo presione
+        self._retry_btn.clicked.connect(self.retry)
+        self._retry_btn.hide()
         self._image = None
         self._hands = None
         self._state = "starting"
@@ -538,6 +670,10 @@ class VideoView(QWidget):
         self._timer.stop()
         super().hideEvent(event)
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._place_retry()
+
     # ---- API ----
     def set_frame(self, packet):
         self._image = packet.image
@@ -545,12 +681,24 @@ class VideoView(QWidget):
         self._state = "live"
         if packet.hands.any:
             self._last_hands_t = time.monotonic()
+        if self._retry_btn.isVisible():
+            self._retry_btn.hide()
 
     def set_state(self, state, message=""):
         self._state, self._message = state, message
         if state != "live":
             self._image = None
+        self._retry_btn.setVisible(state == "error")
+        self._place_retry()
         self.update()
+
+    def _place_retry(self):
+        if self._state != "error":
+            return
+        btn = self._retry_btn
+        btn.resize(btn.sizeHint())
+        _, _, text_rect = self._center_block(self._image_rect(), self._message, btn.height() + 18)
+        btn.move(int(text_rect.center().x() - btn.width() / 2), int(text_rect.bottom() + 18))
 
     def set_overlay(self, overlay):
         self._overlay = overlay
@@ -598,7 +746,8 @@ class VideoView(QWidget):
             p.restore()
             self._draw_hands_chip(p, ir)
         elif self._state == "error":
-            self._draw_center_icon(p, ir, "camera", theme.AMBER, self._message)
+            self._draw_center_icon(p, ir, "camera", theme.AMBER, self._message,
+                                   extra=self._retry_btn.sizeHint().height() + 18)
         else:
             self._draw_spinner(p, ir, self._message or "Encendiendo la cámara…")
 
@@ -677,7 +826,8 @@ class VideoView(QWidget):
             self._veil(p, ir, 90 if small else 150)
             total = max(0.01, ov.get("total", 3.0))
             remaining = max(0.0, ov.get("remaining", 0.0))
-            radius = 46 if small else 78
+            k = max(0.55, min(1.0, ir.height() / 440))  # video chico (ventana chica): todo mas pequeno
+            radius = (46 if small else 78) * k
             ring = QRectF(center.x() - radius, center.y() - radius, radius * 2, radius * 2)
             p.setPen(QPen(QColor(255, 255, 255, 40), 8))
             p.setBrush(Qt.BrushStyle.NoBrush)
@@ -696,14 +846,14 @@ class VideoView(QWidget):
                 p.setFont(theme.icon_font(30))
                 p.drawText(ring, Qt.AlignmentFlag.AlignCenter, theme.ICONS["hand"])
             else:
-                p.setFont(theme.ui_font(74, QFont.Weight.Bold, display=True))
+                p.setFont(theme.ui_font(int(74 * k), QFont.Weight.Bold, display=True))
                 p.drawText(ring, Qt.AlignmentFlag.AlignCenter, str(max(1, math.ceil(remaining))))
-                p.setFont(theme.ui_font(30, QFont.Weight.Bold, display=True))
-                p.drawText(QRectF(ir.left(), ring.top() - 64, ir.width(), 44),
+                p.setFont(theme.ui_font(int(30 * k), QFont.Weight.Bold, display=True))
+                p.drawText(QRectF(ir.left(), ring.top() - 64 * k, ir.width(), 44 * k),
                            Qt.AlignmentFlag.AlignHCenter, ov.get("title", ""))
                 p.setFont(theme.ui_font(15))
                 p.setPen(QColor(theme.TEXT_2))
-                p.drawText(QRectF(ir.left(), ring.bottom() + 14, ir.width(), 30),
+                p.drawText(QRectF(ir.left(), ring.bottom() + 14 * k, ir.width(), 30),
                            Qt.AlignmentFlag.AlignHCenter, ov.get("caption", "Prepárate"))
         elif kind == "recording":
             progress = max(0.0, min(1.0, ov.get("progress", 0.0)))
@@ -743,9 +893,19 @@ class VideoView(QWidget):
             self._veil(p, ir, 170)
             self._draw_center_icon(p, ir, "check", theme.GREEN, ov.get("caption", "¡Listo!"))
 
-    def _draw_center_icon(self, p, ir, icon, color, text):
-        c = ir.center()
-        badge = QRectF(c.x() - 36, c.y() - 58, 72, 72)
+    @staticmethod
+    def _center_block(ir, text, extra=0.0):
+        """Icono + texto centrados en el video (extra: espacio de abajo para un boton)."""
+        font = theme.ui_font(16, QFont.Weight.DemiBold)
+        width = max(40.0, ir.width() - 80)
+        flags = int(Qt.AlignmentFlag.AlignHCenter | Qt.TextFlag.TextWordWrap)
+        text_h = QFontMetrics(font).boundingRect(QRect(0, 0, int(width), 10000), flags, text).height() if text else 0
+        top = ir.center().y() - (72 + 16 + text_h + extra) / 2
+        badge = QRectF(ir.center().x() - 36, top, 72, 72)
+        return font, badge, QRectF(ir.left() + 40, badge.bottom() + 16, width, text_h + 4)
+
+    def _draw_center_icon(self, p, ir, icon, color, text, extra=0.0):
+        font, badge, text_rect = self._center_block(ir, text, extra)
         bg = QColor(color)
         bg.setAlpha(40)
         p.setPen(Qt.PenStyle.NoPen)
@@ -755,9 +915,8 @@ class VideoView(QWidget):
         p.setFont(theme.icon_font(30))
         p.drawText(badge, Qt.AlignmentFlag.AlignCenter, theme.ICONS[icon])
         p.setPen(QColor("white"))
-        p.setFont(theme.ui_font(16, QFont.Weight.DemiBold))
-        p.drawText(QRectF(ir.left() + 40, badge.bottom() + 16, ir.width() - 80, 80),
-                   Qt.AlignmentFlag.AlignHCenter | Qt.TextFlag.TextWordWrap, text)
+        p.setFont(font)
+        p.drawText(text_rect, Qt.AlignmentFlag.AlignHCenter | Qt.TextFlag.TextWordWrap, text)
 
     def _draw_spinner(self, p, ir, text):
         c = ir.center()

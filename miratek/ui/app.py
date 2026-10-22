@@ -5,6 +5,7 @@ import logging
 import logging.handlers
 import os
 import sys
+from pathlib import Path
 import traceback
 
 from .. import __version__, config
@@ -37,6 +38,18 @@ def parse_args(argv):
     return parser.parse_args(argv[1:])
 
 
+def _load_spanish(app):
+    """Botones estandar de Qt (Si/No/Cancelar) en espanol; si no hay traduccion, no pasa nada."""
+    from PySide6.QtCore import QLibraryInfo, QLocale, QTranslator
+
+    folders = [config.resource_path("assets", "traducciones"), Path(QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath))]
+    for name in ("qtbase_es", "qt_es"):
+        translator = QTranslator(app)
+        if any(translator.load(name, str(folder)) for folder in folders if folder.exists()):
+            app.installTranslator(translator)
+    QLocale.setDefault(QLocale(QLocale.Language.Spanish, QLocale.Country.Mexico))
+
+
 def run(argv):
     args = parse_args(argv)
     if args.datos:
@@ -66,6 +79,7 @@ def run(argv):
 
     app = QApplication(argv)
     app.setApplicationName(config.APP_NAME)
+    _load_spanish(app)
     app.setStyle("Fusion")
     app.setStyleSheet(theme.stylesheet())
     app.setFont(theme.ui_font(14))
@@ -90,12 +104,12 @@ def run(argv):
 
     _close_splash()
     if not settings.signer_id:
-        dialog = WelcomeDialog()
+        dialog = WelcomeDialog(store)
         if not dialog.exec():
             return 0
-        settings.new_signer(dialog.value())
+        dialog.apply(settings, store)
     store.set_signer_name(settings.signer_id, settings.signer_name)
 
     window = MainWindow(ctx)
-    window.show()
+    window.show_initial()
     return app.exec()

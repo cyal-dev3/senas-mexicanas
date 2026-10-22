@@ -17,6 +17,17 @@ ROOT = Path(__file__).resolve().parent.parent
 SEP = ";" if os.name == "nt" else ":"
 
 
+def _qt_translations():
+    """Botones de Qt en espanol dentro del .exe (si PySide6 trae las traducciones)."""
+    import PySide6
+    folder = Path(PySide6.__file__).parent / "translations"
+    args = []
+    for name in ("qtbase_es.qm", "qt_es.qm"):
+        if (folder / name).exists():
+            args += ["--add-data", f"{folder / name}{SEP}assets/traducciones"]
+    return args
+
+
 def main():
     os.chdir(ROOT)
     assets = ROOT / "assets"
@@ -37,6 +48,7 @@ def main():
         "--add-data", f"{assets / 'icon.png'}{SEP}assets",
         "--add-data", f"{assets / 'logo.png'}{SEP}assets",
         "--add-data", f"{assets / 'senas_info.json'}{SEP}assets",
+        *_qt_translations(),
         "--collect-binaries", "mediapipe",
         "--collect-data", "mediapipe",
         "--exclude-module", "pytest",

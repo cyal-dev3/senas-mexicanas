@@ -16,7 +16,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QScrollArea, QVBoxLayout, QWi
 from ... import config
 from .. import sounds, theme
 from ..widgets import (Card, DotsProgress, FadeStack, FlowLayout, IconBadge, ProgressRing, Segmented,
-                       VideoView, button, label)
+                       VideoView, button, label, side_scroll)
 from .base import Page
 
 IDLE, WAIT_CAMERA, COUNTDOWN, RECORDING, PAUSED, SIGN_DONE = range(6)
@@ -97,6 +97,9 @@ class RecordPage(Page):
         self._last_beep = None
         self._rec_start = 0.0
         self._status_text = ""
+        self._session_signer = ""
+        self._auto_paused = False    # la pausa la puso la app (Ajustes, otra ventana), no la persona
+        self._pause_caption = ""
 
         self.stack = FadeStack()
         self.stack.addWidget(self._build_overview())
@@ -108,6 +111,7 @@ class RecordPage(Page):
         ctx.camera.frame.connect(self._on_frame)
         ctx.camera.status.connect(self._on_camera_status)
         ctx.data_changed.connect(self._refresh_tiles)
+        ctx.settings_changed.connect(self._on_settings_changed)
 
         for key, handler in ((Qt.Key.Key_Space, self._toggle_pause),
                              (Qt.Key.Key_Backspace, self._undo),
@@ -223,10 +227,10 @@ class RecordPage(Page):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(20)
         self.video = VideoView()
+        self.video.retry.connect(self._retry_camera)
         lay.addWidget(self.video, 1)
 
         panel = Card(padding=26, spacing=10)
-        panel.setFixedWidth(360)
         self.s_over = label("", "overline")
         panel.body.addWidget(self.s_over)
         self.s_name = label("")
@@ -292,7 +296,7 @@ class RecordPage(Page):
 
         for b in (self.pause_btn, self.undo_btn, stop_btn, self.next_btn, more_btn, back_btn):
             b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        lay.addWidget(panel)
+        lay.addWidget(side_scroll(panel, 290, 380))  # en pantallas chicas el panel se desplaza
         return self.session
 
     def start_session(self, sign_id):
@@ -300,6 +304,8 @@ class RecordPage(Page):
         if self.sign.category != self.category and sign_id != config.NOTHING_ID:
             self.category = self.sign.category
         self.session_saved = []
+        self._session_signer = self.ctx.settings.signer_id
+        self._auto_paused = False
         self._goal = self.ctx.settings.clips_per_sign
         self._count = self.ctx.signer_counts().get(sign_id, 0)
         if self._count >= self._goal:
@@ -353,6 +359,8 @@ class RecordPage(Page):
             self._begin_countdown(first)
         else:
             self.state = WAIT_CAMERA
+            self.pause_btn.setText("Pausar")
+            self.pause_btn.setIcon(theme.glyph_icon("pause", theme.TEXT_2, 18))
             self.rec_buttons.show()
             self.done_buttons.hide()
             self.video.set_state("error" if self.ctx.camera.state == "error" else "starting",
@@ -405,7 +413,7 @@ class RecordPage(Page):
             if progress >= 1.0:
                 self._finish_clip()
         elif self.state == PAUSED:
-            self.video.set_overlay({"type": "paused", "caption": "En pausa. Presiona Continuar (o Espacio)."})
+            self.video.set_overlay({"type": "paused", "caption": self._pause_caption})
             self._set_status("En pausa", theme.TEXT_2)
         elif self.state == SIGN_DONE:
             self.video.set_overlay({"type": "done", "caption": f"¡Terminaste «{self.sign.name}»!"})
@@ -448,7 +456,8 @@ class RecordPage(Page):
         world = np.stack([f[2] for f in frames])
         try:
             ref = self.ctx.store.save_clip(self.sign.id, self.ctx.settings.signer_id, image, world,
-                                           (t - t[0]).astype(np.float32), self._aspect)
+                                           (t - t[0]).astype(np.float32), self._aspect,
+                                           mirror=self.ctx.settings.mirror)
         except OSError:
             self._reject("No pude guardar el clip. ¿Está llena la computadora?")
             return
@@ -506,13 +515,45 @@ class RecordPage(Page):
         self._countdown_when_ready(first=True)
 
     def _toggle_pause(self):
-        if self.state in (COUNTDOWN, RECORDING):
-            self.state = PAUSED
-            self.frames = []
-            self.pause_btn.setText("Continuar")
-            self.pause_btn.setIcon(theme.glyph_icon("play", theme.TEXT_2, 18))
+        if self.state in (COUNTDOWN, RECORDING, WAIT_CAMERA):
+            self._pause()
         elif self.state == PAUSED:
+            self._auto_paused = False
             self._countdown_when_ready(first=True)
+
+    def _pause(self, auto=False):
+        self.state = PAUSED
+        self.frames = []
+        self._auto_paused = auto
+        self._pause_caption = ("En pausa mientras no estás en la app. Al regresar seguimos." if auto else
+                               "En pausa. Presiona Continuar (o Espacio).")
+        self.pause_btn.setText("Continuar")
+        self.pause_btn.setIcon(theme.glyph_icon("play", theme.TEXT_2, 18))
+
+    def _retry_camera(self):
+        """Boton «Intentar de nuevo» del video despues de un error de camara."""
+        if self.state == IDLE:
+            return
+        if self.state != PAUSED:
+            self.state = WAIT_CAMERA
+        self.video.set_state("starting", "Encendiendo la cámara…")
+        self._set_status("Encendiendo la cámara…", theme.TEXT_2)
+        self.ctx.camera.restart()
+
+    def on_pause(self):
+        if self.state in (COUNTDOWN, RECORDING, WAIT_CAMERA):
+            self._pause(auto=True)  # el clip a medias se descarta
+
+    def on_resume(self):
+        if self.state == PAUSED and self._auto_paused:
+            self._auto_paused = False
+            self._countdown_when_ready(first=True)  # cuenta completa para volver a acomodarse
+
+    def _on_settings_changed(self):
+        if self.state != IDLE and self.ctx.settings.signer_id != self._session_signer:
+            # Otra persona: lo que siga no debe quedar a nombre de la anterior
+            self._finish_session()
+            self.ctx.toast("Cambiaste de persona: terminé la sesión de grabación anterior.")
 
     def _undo(self):
         if self.state == IDLE or not self.session_saved:
@@ -524,10 +565,9 @@ class RecordPage(Page):
         self._update_panel()
         self.ctx.toast("Borré el último clip.", "info")
         if self.state == SIGN_DONE:
-            self.state = PAUSED
+            self._pause()
             self.rec_buttons.show()
             self.done_buttons.hide()
-            self.pause_btn.setText("Continuar")
         elif self.state in (COUNTDOWN, RECORDING):
             self.frames = []
             self._begin_countdown(first=True)
@@ -536,6 +576,7 @@ class RecordPage(Page):
         if self.state == IDLE:
             return
         self.state = IDLE
+        self._auto_paused = False
         self.timer.stop()
         self.frames = []
         self.video.set_overlay(None)
