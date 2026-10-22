@@ -4,7 +4,7 @@ lo mismo que Python (caracteristicas, modelo y reglas de frases).
 
     python tools/make_parity_vectors.py
 
-Escribe android/app/src/test/resources/parity/*.json. Las pruebas de Kotlin
+Escribe android/core/src/test/resources/parity/*.json. Las pruebas de Kotlin
 (FeaturesParityTest, ModelParityTest, PhraseParityTest) los leen.
 Hay que volver a correrlo si cambia features.py, phrase.py o el formato del modelo.
 """
@@ -20,14 +20,14 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from miratek import config, synthetic  # noqa: E402
-from miratek.augment import augment_clip  # noqa: E402
+from miratek.augment import augment_clip, pad_window  # noqa: E402
 from miratek.dataset import DatasetStore  # noqa: E402
 from miratek.export_android import android_model_dict  # noqa: E402
 from miratek.features import window_features  # noqa: E402
 from miratek.phrase import PhraseBuilder  # noqa: E402
 from miratek.training import TrainConfig, train_from_store  # noqa: E402
 
-OUT = ROOT / "android" / "app" / "src" / "test" / "resources" / "parity"
+OUT = ROOT / "android" / "core" / "src" / "test" / "resources" / "parity"
 
 
 def _nan_to_none(array):
@@ -38,19 +38,19 @@ def feature_cases():
     rng = np.random.default_rng(123)
     cases = []
 
-    def add(image, world, t, aspect, window_s=2.0, t_end=None, hold_edges=False, name=""):
+    def add(image, world, t, aspect, window_s=2.0, t_end=None, mirror=None, name=""):
         # Redondeamos las entradas ANTES de calcular: asi el archivo es chico y ambos
         # lados (Python y Kotlin) calculan con exactamente los mismos numeros.
         image = np.round(np.asarray(image, np.float32), 6)
         world = np.round(np.asarray(world, np.float32), 6)
         t = np.round(np.asarray(t, np.float64), 6)
-        feats = window_features(image, world, t, aspect, window_s, t_end=t_end, hold_edges=hold_edges)
+        feats = window_features(image, world, t, aspect, window_s, t_end=t_end, mirror=mirror)
         cases.append({
             "name": name,
             "aspect": aspect,
             "window_s": window_s,
             "t_end": float(t[-1]) if t_end is None else float(t_end),
-            "hold_edges": hold_edges,
+            "mirror": mirror,
             "times": [float(v) for v in np.asarray(t, np.float64)],
             "image": _nan_to_none(np.asarray(image, np.float32).reshape(len(t), 126)),
             "world": _nan_to_none(np.asarray(world, np.float32).reshape(len(t), 126)),
@@ -70,7 +70,15 @@ def feature_cases():
     add(image, world, t, 4 / 3, name="nada")
     add(image[:20], world[:20], t[:20], 4 / 3, name="short")
     aug = augment_clip(image, world, t, 4 / 3, rng)
-    add(aug[0], aug[1], aug[2], 4 / 3, t_end=aug[3], hold_edges=True, name="augmented")
+    p_img, p_wld, p_t = pad_window(aug[0], aug[1], aug[2], aug[3], 2.0)
+    add(p_img, p_wld, p_t, 4 / 3, t_end=aug[3], name="augmented")
+    # Lateralidad explicita: zurda (espejo) y diestra (sin espejo) con la otra mano a la vista
+    two = image.copy()
+    two[:, 0] = image[:, 1] * np.float32(0.9) + np.float32(0.05)
+    two_w = world.copy()
+    two_w[:, 0] = world[:, 1] * np.float32(0.8)
+    add(two, two_w, t, 4 / 3, mirror=True, name="mirror_true")
+    add(two, two_w, t, 4 / 3, mirror=False, name="mirror_false")
     gap_img, gap_wld = image.copy(), world.copy()
     gap_img[10:30] = np.nan
     gap_wld[10:30] = np.nan

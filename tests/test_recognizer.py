@@ -91,3 +91,47 @@ def test_large_absolute_times_match_small_ones():
     days = run(24 * 3600 * 24.0)  # 24 dias de uptime
     assert np.allclose(base, days, atol=1e-4)
     assert np.allclose(base, window_features(image, world, t, 4 / 3, 2.0), atol=1e-4)
+
+
+def test_single_nothing_does_not_break_word_but_half_second_does():
+    model = ScriptedModel()
+    rec = LiveRecognizer(model, smoothing=0.0)
+    _, t = _run(rec, model, [0.9, 0.05, 0.05], 40, 0.0)
+    model.next = np.array([0.05, 0.05, 0.9])
+    preds = []
+    for _ in range(4):
+        t += 1 / 30
+        pred, _ = rec.push(t, _hands())
+        if pred:
+            preds.append(pred)
+    assert preds and not any(p.word_break for p in preds), "una sola 'nada' no corta la palabra"
+    for _ in range(20):
+        t += 1 / 30
+        pred, _ = rec.push(t, _hands())
+        if pred:
+            preds.append(pred)
+    assert preds[-1].word_break
+    # Tambien sin manos
+    rec2 = LiveRecognizer(model, smoothing=0.0)
+    _, t2 = _run(rec2, model, [0.9, 0.05, 0.05], 40, 0.0)
+    last = None
+    for _ in range(40):
+        t2 += 1 / 30
+        pred, _ = rec2.push(t2, empty_hands())
+        last = pred or last
+    assert last.word_break and not last.hands_visible
+
+
+def test_sign_of_another_category_never_becomes_a_confident_letter():
+    class WithLetter(ScriptedModel):
+        classes = ["hola", "gracias", "letra_a", "nada"]
+
+    model = WithLetter()
+    rec = LiveRecognizer(model, smoothing=0.0, cooldown_s=0.2)
+    rec.set_allowed(["letra_a"])
+    # Casi todo apunta a "hola" (una palabra): al deletrear no debe salir la A
+    events, t = _run(rec, model, [0.85, 0.05, 0.08, 0.02], 60, 0.0)
+    assert events == []
+    # Una A de verdad si sale
+    events, _ = _run(rec, model, [0.1, 0.05, 0.8, 0.05], 60, t)
+    assert events == ["letra_a"]

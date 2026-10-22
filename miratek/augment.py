@@ -10,6 +10,8 @@ pasan frente a una camara:
   - Hace la sena mas rapido o mas lento (velocidad).
   - Empieza la sena un poco antes o despues (ventana corrida).
   - MediaPipe pierde la mano en algunos frames.
+  - Al inicio de la ventana todavia se ve la cola de la sena anterior
+    (asi pasa en vivo: el modelo aprende a reconocer la sena nueva pronto).
 
 Las variaciones se aplican SOLO al entrenar, nunca a los datos de examen.
 """
@@ -20,7 +22,7 @@ from .features import _nanmean
 
 
 def augment_clip(image, world, t, aspect, rng):
-    """Devuelve (image, world, t, t_end) con variaciones aleatorias."""
+    """Devuelve (image, world, t, t_end) con variaciones aleatorias (mismas formas que la entrada)."""
     image = np.array(image, dtype=np.float32, copy=True)
     world = np.array(world, dtype=np.float32, copy=True)
     t = np.asarray(t, np.float32)
@@ -60,3 +62,44 @@ def augment_clip(image, world, t, aspect, rng):
     # Ventana corrida: empezar/terminar un poco antes o despues
     t_end = float(t_new[-1] + rng.uniform(-0.4, 0.3))
     return image, world, t_new, t_end
+
+
+def pad_window(image, world, t, t_end, window_s):
+    """Rellena los bordes de la ventana repitiendo el primer/ultimo frame TAL CUAL.
+
+    Si en ese frame no habia mano, sigue sin haberla: a diferencia de
+    hold_edges en el remuestreo, aqui no se inventan manos donde la persona
+    todavia tenia las manos abajo.
+    """
+    image, world, t = list(image), list(world), list(np.asarray(t, np.float64))
+    start = t_end - window_s
+    if start < t[0]:
+        image.insert(0, image[0])
+        world.insert(0, world[0])
+        t.insert(0, start)
+    if t_end > t[-1]:
+        image.append(image[-1])
+        world.append(world[-1])
+        t.append(t_end)
+    return np.stack(image), np.stack(world), np.asarray(t, np.float64)
+
+
+def augment_transition(image, world, t, aspect, prefix, rng, window_s):
+    """La ventana empieza con la cola de OTRA sena y termina antes de que acabe esta.
+
+    Asi es en vivo: cuando alguien pasa de una sena a otra, la ventana de 2 s
+    todavia trae el final de la anterior. Entrenar con estas ventanas hace que
+    la sena nueva se reconozca en cuanto lleva ~1.2-1.7 s en pantalla.
+    `prefix` es (image, world, t) de la sena anterior (sin aumentar).
+    """
+    a_img, a_wld, a_t, _ = augment_clip(image, world, t, aspect, rng)
+    p_img, p_wld, p_t = prefix
+    gap = rng.uniform(0.05, 0.25)
+    shift = rng.uniform(0.3, 0.8)
+    p_t = np.asarray(p_t, np.float64)
+    p_t = p_t - p_t[-1] + (a_t[0] - gap)
+    image = np.concatenate([np.asarray(p_img, np.float32), a_img])
+    world = np.concatenate([np.asarray(p_wld, np.float32), a_wld])
+    times = np.concatenate([p_t, a_t.astype(np.float64)])
+    t_end = float(a_t[-1] - shift)
+    return pad_window(image, world, times, t_end, window_s) + (t_end,)

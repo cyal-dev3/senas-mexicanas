@@ -52,7 +52,7 @@ def _nanmedian0(a):
     return np.where(n > 0, (lo + hi) / 2.0, np.nan)
 
 
-def _resample_slot(t, values, present, grid, hold_edges):
+def _resample_slot(t, values, present, grid):
     """Valores de UNA mano en los instantes 'grid' (interpolando)."""
     out = np.full((len(grid), values.shape[1]), np.nan, dtype=np.float64)
     tp = t[present]
@@ -68,9 +68,6 @@ def _resample_slot(t, values, present, grid, hold_edges):
     dp = np.where(has_prev, grid - tp[jp], np.inf)
     use_n = dn <= MAX_GAP
     use_p = dp <= MAX_GAP
-    if hold_edges:
-        use_n |= ~has_prev
-        use_p |= ~has_next
     both = use_n & use_p
     if both.any():
         w = (dp[both] / (dp[both] + dn[both]))[:, None]
@@ -82,7 +79,7 @@ def _resample_slot(t, values, present, grid, hold_edges):
     return out, use_n | use_p
 
 
-def resample_window(image, world, t, window_s, t_end=None, hold_edges=False):
+def resample_window(image, world, t, window_s, t_end=None):
     """Remuestrea la ventana [t_end - window_s, t_end] a N_STEPS pasos."""
     t = np.asarray(t, np.float64)
     if t_end is None:
@@ -97,7 +94,7 @@ def resample_window(image, world, t, window_s, t_end=None, hold_edges=False):
     for s in (LEFT, RIGHT):
         vals = np.concatenate([image[:, s], world[:, s]], axis=1)
         mask = ~np.isnan(vals[:, 0]) & ~np.isnan(vals[:, 63])
-        out, ok = _resample_slot(t, vals, mask, grid, hold_edges)
+        out, ok = _resample_slot(t, vals, mask, grid)
         img[:, s] = out[:, :63].reshape(N_STEPS, 21, 3)
         wld[:, s] = out[:, 63:].reshape(N_STEPS, 21, 3)
         present[:, s] = ok
@@ -115,8 +112,14 @@ def _segment_mean(a):
     return _nanmean(seg, axis=1)
 
 
-def features_from_resampled(img, wld, present, aspect):
-    """Calcula el vector de 728 numeros a partir de la ventana remuestreada."""
+def features_from_resampled(img, wld, present, aspect, mirror=None):
+    """Calcula el vector de 728 numeros a partir de la ventana remuestreada.
+
+    mirror: True si la persona hace las senas con la mano izquierda (se refleja
+    como espejo para que la mano dominante quede a la derecha), False si con la
+    derecha, None para adivinarlo con la mano que mas aparece y se mueve. Lo
+    mejor es decirlo: con la otra mano en reposo a la vista, adivinar falla.
+    """
     xy = np.stack([img[..., 0] * aspect, img[..., 1]], axis=-1)  # coords "cuadradas"
     wld = wld.copy()
     present = present.copy()
@@ -130,7 +133,8 @@ def features_from_resampled(img, wld, present, aspect):
         scale = DEFAULT_PALM
     path = np.nansum(steps, axis=0) / scale
     energy = present.sum(axis=0) * (1.0 + path)
-    if energy[LEFT] > 1.2 * energy[RIGHT] + 1e-6:
+    do_mirror = (energy[LEFT] > 1.2 * energy[RIGHT] + 1e-6) if mirror is None else bool(mirror)
+    if do_mirror:
         xy = xy[:, ::-1].copy()
         xy[..., 0] = aspect - xy[..., 0]
         wld = wld[:, ::-1].copy()
@@ -166,9 +170,9 @@ def features_from_resampled(img, wld, present, aspect):
     return np.clip(vec, -10.0, 10.0).astype(np.float32)
 
 
-def window_features(image, world, t, aspect, window_s, t_end=None, hold_edges=False):
+def window_features(image, world, t, aspect, window_s, t_end=None, mirror=None):
     """Vector de caracteristicas para la ventana que termina en t_end."""
     if len(t) == 0:
         return np.zeros(FEATURE_SIZE, np.float32)
-    img, wld, present = resample_window(image, world, t, window_s, t_end, hold_edges)
-    return features_from_resampled(img, wld, present, aspect)
+    img, wld, present = resample_window(image, world, t, window_s, t_end)
+    return features_from_resampled(img, wld, present, aspect, mirror)

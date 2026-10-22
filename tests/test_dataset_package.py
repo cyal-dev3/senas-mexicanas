@@ -61,9 +61,15 @@ def _det(label, x):
 
 
 def test_duplicate_labels_split_by_position():
+    # Sin frame anterior: la convencion observada de MediaPipe ("Right" = mas a la izquierda)
     hands = assign_slots([_det("Right", 0.7), _det("Right", 0.3)])
-    assert hands.image[RIGHT, 0, 0] == np.float32(0.7)
-    assert hands.image[LEFT, 0, 0] == np.float32(0.3)
+    assert hands.image[RIGHT, 0, 0] == np.float32(0.3)
+    assert hands.image[LEFT, 0, 0] == np.float32(0.7)
+    # Con frame anterior: cada mano sigue en la posicion de la mas cercana, aunque se crucen
+    prev = assign_slots([_det("Left", 0.2), _det("Right", 0.8)])
+    crossed = assign_slots([_det("Left", 0.78), _det("Left", 0.22)], previous=prev)
+    assert crossed.image[LEFT, 0, 0] == np.float32(0.22)
+    assert crossed.image[RIGHT, 0, 0] == np.float32(0.78)
 
 
 def test_single_hand_keeps_slot_when_label_flips():
@@ -92,7 +98,7 @@ def test_rejects_empty_or_broken_clips_and_bad_manifests(store, tmp_path):
         zf.writestr("clips/ana-1/hola/000-vacio.npz", npz_bytes(0))
         zf.writestr("clips/ana-1/hola/001-bueno.npz", npz_bytes(12))
     result = import_package(store, pkg, tmp_path / "m")
-    assert result.added == 1 and result.skipped == 1
+    assert result.added == 1 and result.skipped == 0 and result.invalid == 1
 
     corrupt = tmp_path / "corrupto.zip"
     corrupt.write_bytes(pkg.read_bytes()[:-40])  # descarga incompleta

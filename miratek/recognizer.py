@@ -27,6 +27,7 @@ class Prediction:
     confidence: float         # 0..1
     top: list                 # [(sena, probabilidad), ...] las 3 mas probables
     hands_visible: bool
+    word_break: bool = False  # True: ya lleva un rato sin sena (cerrar la palabra deletreada)
 
 
 @dataclass
@@ -36,6 +37,13 @@ class SignEvent:
     t: float
 
 
+# Si al menos esta fraccion de la probabilidad cae en senas de OTRA categoria
+# (ej: una palabra mientras deletreas), no se confirma ninguna sena del modo.
+# Igual en Recognizer.kt.
+MAX_FOREIGN_MASS = 0.8
+# Cuanto tiempo seguido sin sena ("Nada" o sin manos) cierra la palabra deletreada
+WORD_BREAK_S = 0.5
+
 SENSITIVITY = {  # (umbral de confianza, predicciones seguidas necesarias)
     "baja": (0.75, 4),
     "media": (0.6, 3),
@@ -44,9 +52,11 @@ SENSITIVITY = {  # (umbral de confianza, predicciones seguidas necesarias)
 
 
 class LiveRecognizer:
-    def __init__(self, model, aspect=4 / 3, hop=2, smoothing=0.5, sensitivity="media", cooldown_s=0.8):
+    def __init__(self, model, aspect=4 / 3, hop=2, smoothing=0.5, sensitivity="media", cooldown_s=0.8,
+                 mirror=None):
         self.model = model
         self.aspect = aspect
+        self.mirror = mirror  # True si la persona hace las senas con la izquierda (ver features)
         self.hop = hop
         self.smoothing = smoothing
         self.cooldown_s = cooldown_s
@@ -77,6 +87,7 @@ class LiveRecognizer:
         self._armed_block = None   # sena ya confirmada que sigue en pantalla
         self._last_emit_t = -1e9
         self._last_hand_t = -1e9
+        self._nothing_since = None   # desde cuando no hay sena (para cerrar la palabra)
         self.last_prediction = None
 
     def push(self, t, hands):
@@ -95,7 +106,7 @@ class LiveRecognizer:
             # Sin manos: no hay sena. Olvidamos el promedio para empezar limpio.
             self._probs = None
             self._candidate, self._hits, self._armed_block = None, 0, None
-            self.last_prediction = Prediction(None, 0.0, [], False)
+            self.last_prediction = Prediction(None, 0.0, [], False, self._word_break(t, True))
             return self.last_prediction, None
 
         span = self._frames[-1][0] - self._frames[0][0]
@@ -105,9 +116,13 @@ class LiveRecognizer:
         times = np.array([f[0] for f in self._frames], np.float64)  # float32 pierde precision
         image = np.stack([f[1] for f in self._frames])
         world = np.stack([f[2] for f in self._frames])
-        feats = window_features(image, world, times, self.aspect, self.model.window_s, t_end=t)
+        feats = window_features(image, world, times, self.aspect, self.model.window_s, t_end=t,
+                                mirror=self.mirror)
         probs = self.model.predict_proba(feats)[0]
+        foreign = 0.0
         if self._mask is not None and self._mask.any():
+            # Solo compiten las senas del modo (una letra O nunca se confunde con el 0).
+            foreign = float(probs[~self._mask].sum())
             probs = np.where(self._mask, probs, 0.0)
             probs = probs / max(probs.sum(), 1e-9)
         if self._probs is None:
@@ -120,8 +135,23 @@ class LiveRecognizer:
         conf = float(self._probs[best])
         sign_id = self.model.classes[best]
         top = [(self.model.classes[i], float(self._probs[i])) for i in order[:3]]
-        self.last_prediction = Prediction(sign_id, conf, top, True)
+        is_nothing = best == self.nothing_index
+        self.last_prediction = Prediction(sign_id, conf, top, True, self._word_break(t, is_nothing))
+        if foreign >= MAX_FOREIGN_MASS:
+            # Casi todo apuntaba a una sena de OTRA categoria: no es una letra/numero
+            # "seguro" solo porque se reparta entre las del modo.
+            self._candidate, self._hits = None, 0
+            return self.last_prediction, None
         return self.last_prediction, self._update_events(best, conf, t)
+
+    def _word_break(self, t, no_sign):
+        """True cuando lleva WORD_BREAK_S seguidos sin sena (una sola "Nada" no corta la palabra)."""
+        if not no_sign:
+            self._nothing_since = None
+            return False
+        if self._nothing_since is None:
+            self._nothing_since = t
+        return t - self._nothing_since >= WORD_BREAK_S
 
     def _update_events(self, best, conf, t):
         is_sign = best != self.nothing_index and conf >= self.threshold

@@ -25,9 +25,9 @@ from pathlib import Path
 import numpy as np
 
 from . import __version__, config
-from .augment import augment_clip
+from .augment import augment_clip, augment_transition, pad_window
 from .features import FEATURE_SIZE, FEATURE_VERSION, window_features
-from .mlp import MLP, TrainingCancelled, fit_temperature, softmax, train_mlp
+from .mlp import MLP, TrainingCancelled, fit_temperature, fit_temperature_rows, softmax, train_mlp
 
 MODEL_FORMAT = 1
 
@@ -60,6 +60,8 @@ class TrainConfig:
     test_fraction: float = 0.2
     max_signer_folds: int = 6
     seed: int = 42
+    input_noise: float = 0.05        # Ruido sobre las caracteristicas normalizadas al entrenar
+    transition_fraction: float = 0.3  # Variaciones que empiezan con la cola de otra sena
 
 
 @dataclass
@@ -130,41 +132,70 @@ class TrainedModel:
             with np.load(path, allow_pickle=False) as data:
                 meta = json.loads(str(data["meta"]))
                 n_layers = sum(1 for k in data.files if k.startswith("w"))
-                weights = [data[f"w{i}"] for i in range(n_layers)]
-                biases = [data[f"b{i}"] for i in range(n_layers)]
-                mean, std = data["mean"], data["std"]
+                weights = [np.asarray(data[f"w{i}"], np.float32) for i in range(n_layers)]
+                biases = [np.asarray(data[f"b{i}"], np.float32) for i in range(n_layers)]
+                mean, std = np.asarray(data["mean"], np.float32), np.asarray(data["std"], np.float32)
+            classes = list(meta["classes"])
+            if meta.get("feature_version") != FEATURE_VERSION or mean.shape != (FEATURE_SIZE,):
+                raise ModelError("Este modelo es de otra versión de la app. Vuelve a entrenar.")
+            # Que todo encaje: capas encadenadas, una salida por sena, numeros validos
+            if (not weights or std.shape != mean.shape or weights[0].shape[0] != FEATURE_SIZE
+                    or weights[-1].shape[1] != len(classes) or len(classes) < 2
+                    or any(w.ndim != 2 or b.shape != (w.shape[1],) for w, b in zip(weights, biases))
+                    or any(a.shape[1] != b.shape[0] for a, b in zip(weights[:-1], weights[1:]))
+                    or not all(np.isfinite(a).all() for a in weights + biases + [mean, std])
+                    or not all(isinstance(c, str) for c in classes)):
+                raise ModelError("El archivo del modelo está dañado.")
+            std = np.where(std > 0, std, 1.0).astype(np.float32)
+            temperature = float(meta.get("temperature", 1.0))
+            if not np.isfinite(temperature) or temperature <= 0:
+                temperature = 1.0
+            report = TrainReport.from_dict(meta["report"]) if isinstance(meta.get("report"), dict) else None
+        except ModelError:
+            raise
         except Exception as exc:
             raise ModelError("El archivo del modelo está dañado.") from exc
-        if meta.get("feature_version") != FEATURE_VERSION or mean.shape[0] != FEATURE_SIZE:
-            raise ModelError("Este modelo es de otra versión de la app. Vuelve a entrenar.")
         mlp = MLP(weights[0].shape[0], weights[-1].shape[1],
                   hidden=tuple(w.shape[1] for w in weights[:-1]), dropout=meta.get("dropout", ()))
-        mlp.weights = [w.astype(np.float32) for w in weights]
-        mlp.biases = [b.astype(np.float32) for b in biases]
-        report = TrainReport.from_dict(meta["report"]) if meta.get("report") else None
-        return cls(mlp, mean, std, meta["classes"], meta.get("temperature", 1.0),
-                   meta.get("window_s", config.CLIP_SECONDS), report)
+        mlp.weights = weights
+        mlp.biases = biases
+        return cls(mlp, mean, std, classes, temperature, float(meta.get("window_s", config.CLIP_SECONDS)), report)
 
 
 # ============================================================
 # Ayudantes
 # ============================================================
 
-def _clip_features(clip, window_s, rng=None):
+def _clip_features(clip, window_s, rng=None, prefix=None):
+    """Caracteristicas del clip tal cual, o de una variacion (con rng).
+
+    prefix: otro clip cuya cola aparece al inicio de la ventana (transicion).
+    Los bordes se rellenan con pad_window: si la persona tenia las manos abajo
+    al inicio, el modelo lo ve asi (hold_edges inventaba una mano ahi).
+    """
     if rng is None:
-        return window_features(clip.image, clip.world, clip.t, clip.aspect, window_s)
-    image, world, t, t_end = augment_clip(clip.image, clip.world, clip.t, clip.aspect, rng)
-    return window_features(image, world, t, clip.aspect, window_s, t_end=t_end, hold_edges=True)
+        return window_features(clip.image, clip.world, clip.t, clip.aspect, window_s, mirror=clip.mirror)
+    if prefix is not None:
+        image, world, t, t_end = augment_transition(clip.image, clip.world, clip.t, clip.aspect,
+                                                    (prefix.image, prefix.world, prefix.t), rng, window_s)
+    else:
+        image, world, t, t_end = augment_clip(clip.image, clip.world, clip.t, clip.aspect, rng)
+        image, world, t = pad_window(image, world, t, t_end, window_s)
+    return window_features(image, world, t, clip.aspect, window_s, t_end=t_end, mirror=clip.mirror)
 
 
-def _build_set(clips, class_index, window_s, copies, rng, tick=None):
+def _build_set(clips, class_index, window_s, copies, rng, tick=None, transition_fraction=0.0):
     feats, labels = [], []
     for i, clip in enumerate(clips):
         label = class_index[clip.sign_id]
         feats.append(_clip_features(clip, window_s))
         labels.append(label)
         for _ in range(copies):
-            feats.append(_clip_features(clip, window_s, rng))
+            prefix = None
+            if len(clips) > 1 and rng.random() < transition_fraction:
+                j = int(rng.integers(len(clips) - 1))
+                prefix = clips[j if j < i else j + 1]  # cualquier otro clip (otra sena o "nada")
+            feats.append(_clip_features(clip, window_s, rng, prefix))
             labels.append(label)
         if tick:
             tick((i + 1) / len(clips))
@@ -200,11 +231,14 @@ def _fit(train_clips, classes, cfg, copies, epochs, rng, progress, should_cancel
         if should_cancel and should_cancel():
             raise TrainingCancelled()
 
-    x_tr, y_tr = _build_set(tr, class_index, cfg.window_s, copies, rng, build_tick)
+    x_tr, y_tr = _build_set(tr, class_index, cfg.window_s, copies, rng, build_tick, cfg.transition_fraction)
     x_va, y_va = _build_set(va, class_index, cfg.window_s, 2, rng)
     mean = x_tr.mean(axis=0)
     std = x_tr.std(axis=0)
-    std = np.where(std < 1e-3, 1.0, std)
+    # Piso: un numero casi constante al grabar no debe disparar la red con gente nueva
+    varying = std[std >= 1e-3]
+    floor = 0.05 * float(np.median(varying)) if varying.size else 0.0
+    std = np.where(std < 1e-3, 1.0, np.maximum(std, floor))
     x_tr = ((x_tr - mean) / std).astype(np.float32)
     x_va = ((x_va - mean) / std).astype(np.float32)
 
@@ -213,8 +247,8 @@ def _fit(train_clips, classes, cfg, copies, epochs, rng, progress, should_cancel
 
     mlp = train_mlp(x_tr, y_tr, x_va, y_va, len(classes), hidden=cfg.hidden, dropout=cfg.dropout,
                     lr=cfg.lr, weight_decay=cfg.weight_decay, batch_size=cfg.batch_size,
-                    max_epochs=epochs, smoothing=cfg.smoothing, seed=int(rng.integers(1 << 30)),
-                    on_epoch=on_epoch, should_cancel=should_cancel)
+                    max_epochs=epochs, smoothing=cfg.smoothing, input_noise=cfg.input_noise,
+                    seed=int(rng.integers(1 << 30)), on_epoch=on_epoch, should_cancel=should_cancel)
     temperature = fit_temperature(mlp.logits(x_va), y_va) if len(y_va) else 1.0
     return TrainedModel(mlp, mean, std, classes, temperature, cfg.window_s)
 
@@ -224,19 +258,22 @@ def _predict_clips(model, clips):
     con su categoria (una letra O nunca se confunde con el numero 0 porque
     al deletrear no hay numeros). 'Nada' compite contra todo."""
     if not clips:
-        return np.zeros(0, np.int64)
+        return np.zeros(0, np.int64), []
     feats = np.stack([_clip_features(c, model.window_s) for c in clips])
-    probs = model.predict_proba(feats)
+    logits = model.mlp.logits(((feats - model.mean) / model.std).astype(np.float32))
     cats = np.array([config.category_of(c) for c in model.classes])
     is_nothing = np.array([c == config.NOTHING_ID for c in model.classes])
     preds = []
-    for clip, p in zip(clips, probs):
+    for clip, z in zip(clips, logits):
         if clip.sign_id == config.NOTHING_ID:
-            preds.append(int(p.argmax()))
+            preds.append(int(z.argmax()))
         else:
             mask = (cats == config.category_of(clip.sign_id)) | is_nothing
-            preds.append(int(np.where(mask, p, -1.0).argmax()))
-    return np.asarray(preds, np.int64)
+            preds.append(int(np.where(mask, z, -np.inf).argmax()))
+    # Los logits del examen sirven para calibrar la confianza con personas nuevas
+    index = {c: i for i, c in enumerate(model.classes)}
+    rows = [(z, index[clip.sign_id]) for clip, z in zip(clips, logits) if clip.sign_id in index]
+    return np.asarray(preds, np.int64), rows
 
 
 # ============================================================
@@ -254,9 +291,22 @@ def train_from_store(store, cfg=None, progress=None, should_cancel=None):
     # ---------- 1. Cargar clips ----------
     report_progress(0.0, "Leyendo tus grabaciones…")
     refs = store.list_clips()
+    loaded = []
+    for i, ref in enumerate(refs):
+        try:
+            clip = store.load(ref)
+            if len(clip.t) >= 2:
+                loaded.append(clip)
+        except Exception:
+            pass  # un clip danado no debe tumbar todo el entrenamiento
+        if i % 25 == 0:
+            report_progress(0.08 * (i + 1) / max(1, len(refs)), "Leyendo tus grabaciones…")
+            if should_cancel and should_cancel():
+                raise TrainingCancelled()
+    # Las senas se eligen con los clips que SI se pudieron leer
     counts = {}
-    for ref in refs:
-        counts[ref.sign_id] = counts.get(ref.sign_id, 0) + 1
+    for clip in loaded:
+        counts[clip.sign_id] = counts.get(clip.sign_id, 0) + 1
     classes = sorted(c for c, n in counts.items() if n >= config.MIN_CLIPS_PER_CLASS)
     excluded = sorted(c for c, n in counts.items() if n < config.MIN_CLIPS_PER_CLASS)
     if len(classes) < 2:
@@ -269,27 +319,16 @@ def train_from_store(store, cfg=None, progress=None, should_cancel=None):
     if config.NOTHING_ID not in classes:
         warnings.append("Graba la seña «Nada» para que el modelo sepa cuándo no estás "
                         "haciendo ninguna seña.")
-
-    clips = []
-    usable = [r for r in refs if r.sign_id in classes]
-    for i, ref in enumerate(usable):
-        try:
-            clip = store.load(ref)
-            if len(clip.t) >= 2:
-                clips.append(clip)
-        except Exception:
-            pass  # un clip danado no debe tumbar todo el entrenamiento
-        if i % 25 == 0:
-            report_progress(0.08 * (i + 1) / len(usable), "Leyendo tus grabaciones…")
-            if should_cancel and should_cancel():
-                raise TrainingCancelled()
+    clips = [c for c in loaded if c.sign_id in classes]
     class_index = {c: i for i, c in enumerate(classes)}
     signers = sorted({c.signer_id for c in clips})
 
     # ---------- 2. Examen honesto ----------
+    # Cualquier persona con 2 o mas senas sirve de examen: se le examina en lo que
+    # grabo. (Antes se pedia la mitad de las senas y el examen caia en silencio al
+    # reparto por grabaciones, que sale inflado.)
     per_signer_classes = {s: {c.sign_id for c in clips if c.signer_id == s} for s in signers}
-    need = max(2, int(np.ceil(0.5 * len(classes))))
-    eligible = [s for s in signers if len(per_signer_classes[s]) >= need]
+    eligible = [s for s in signers if len(per_signer_classes[s]) >= 2]
     eligible.sort(key=lambda s: -sum(1 for c in clips if c.signer_id == s))
     folds = []
     if len(eligible) >= 2:
@@ -314,6 +353,7 @@ def train_from_store(store, cfg=None, progress=None, should_cancel=None):
     n = len(classes)
     confusion = np.zeros((n, n), np.int64)
     per_signer = {}
+    exam_rows = []  # logits del examen: calibran la confianza del modelo final
     eval_span = 0.57 / len(folds)
     for k, (signer, train, test, fold_classes) in enumerate(folds):
         base = 0.08 + k * eval_span
@@ -321,7 +361,8 @@ def train_from_store(store, cfg=None, progress=None, should_cancel=None):
                  if eval_mode == "personas" else "Haciendo el examen…")
         model = _fit(train, fold_classes, cfg, cfg.eval_aug_copies, cfg.eval_max_epochs, rng,
                      lambda f, b=base, m=label: report_progress(b + eval_span * f, m), should_cancel)
-        pred = _predict_clips(model, test)
+        pred, rows = _predict_clips(model, test)
+        exam_rows.extend(rows)
         true_idx = [class_index[c.sign_id] for c in test]
         pred_idx = [class_index[fold_classes[p]] for p in pred]
         for t_i, p_i in zip(true_idx, pred_idx):
@@ -333,6 +374,10 @@ def train_from_store(store, cfg=None, progress=None, should_cancel=None):
     final = _fit(clips, classes, cfg, cfg.aug_copies, cfg.max_epochs, rng,
                  lambda f: report_progress(0.65 + 0.33 * f, "Entrenando el modelo final…"),
                  should_cancel)
+    if eval_mode == "personas" and exam_rows:
+        # La temperatura se ajusta con personas que el modelo NO vio: asi "80% seguro"
+        # significa 80% tambien con gente nueva, no solo con quien grabo.
+        final.temperature = fit_temperature_rows(exam_rows)
     report_progress(0.99, "Guardando…")
 
     total = confusion.sum()

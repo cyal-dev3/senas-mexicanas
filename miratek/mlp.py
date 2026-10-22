@@ -137,10 +137,27 @@ def fit_temperature(logits, y):
     """
     if len(y) == 0:
         return 1.0
+    return fit_temperature_rows([(row, int(label)) for row, label in zip(np.asarray(logits), y)])
+
+
+def fit_temperature_rows(rows):
+    """Igual que fit_temperature, pero cada fila trae sus propios logits.
+
+    Sirve para juntar las predicciones del examen de varios modelos (cada uno
+    con su lista de senas): la temperatura no depende de que clases sean.
+    """
+    if not rows:
+        return 1.0
+    logits = [np.asarray(r, np.float64) for r, _ in rows]
+    labels = [y for _, y in rows]
 
     def nll(temp):
-        p = softmax(logits, temp)
-        return -np.log(np.clip(p[np.arange(len(y)), y], 1e-12, 1.0)).mean()
+        total = 0.0
+        for row, y in zip(logits, labels):
+            z = row / temp
+            z = z - z.max()
+            total -= z[y] - np.log(np.exp(z).sum())
+        return total / len(rows)
 
     lo, hi = np.log(0.25), np.log(5.0)
     for _ in range(40):  # busqueda de la seccion dorada
@@ -159,8 +176,12 @@ class TrainingCancelled(Exception):
 
 def train_mlp(x_train, y_train, x_val, y_val, n_classes, *, hidden=(256, 128), dropout=(0.3, 0.2),
               lr=1e-3, weight_decay=1e-4, batch_size=128, max_epochs=60, patience=10,
-              smoothing=0.05, seed=0, on_epoch=None, should_cancel=None):
-    """Entrena la red y regresa la version que mejor le fue en validacion."""
+              smoothing=0.05, input_noise=0.0, seed=0, on_epoch=None, should_cancel=None):
+    """Entrena la red y regresa la version que mejor le fue en validacion.
+
+    input_noise: ruido gaussiano sobre la entrada (ya normalizada) en cada lote.
+    Regulariza contra manos distintas a las grabadas.
+    """
     rng = np.random.default_rng(seed)
     model = MLP(x_train.shape[1], n_classes, hidden, dropout, seed)
     opt = AdamW(model.params, lr=lr, weight_decay=weight_decay, n_decay=len(model.weights))
@@ -176,11 +197,16 @@ def train_mlp(x_train, y_train, x_val, y_val, n_classes, *, hidden=(256, 128), d
         if should_cancel and should_cancel():
             raise TrainingCancelled()
         order = rng.permutation(len(x_train))
-        for start in range(0, len(order), batch_size):
+        for batch_no, start in enumerate(range(0, len(order), batch_size)):
             idx = order[start:start + batch_size]
             if len(idx) < 2:
                 continue
-            logits, cache = model.forward(x_train[idx], train=True, rng=rng)
+            if should_cancel and batch_no % 10 == 9 and should_cancel():
+                raise TrainingCancelled()  # cancelar responde en menos de un segundo
+            xb = x_train[idx]
+            if input_noise > 0:
+                xb = xb + rng.normal(0, input_noise, xb.shape).astype(xb.dtype)
+            logits, cache = model.forward(xb, train=True, rng=rng)
             _, grad = cross_entropy(logits, y_train[idx], smoothing, class_weights)
             opt.step(model.params, model.backward(cache, grad))
 

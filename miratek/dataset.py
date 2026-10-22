@@ -51,6 +51,7 @@ class Clip:
     sign_id: str
     signer_id: str
     clip_id: str
+    mirror: bool | None = None  # True: persona zurda (se refleja), None: no se sabe
 
 
 def new_clip_id():
@@ -67,7 +68,7 @@ class DatasetStore:
 
     # ---------------- Guardar y borrar ----------------
 
-    def save_clip(self, sign_id, signer_id, image, world, t, aspect):
+    def save_clip(self, sign_id, signer_id, image, world, t, aspect, mirror=None):
         if not (is_safe_id(sign_id) and is_safe_id(signer_id)):
             raise ValueError(f"id invalido: {sign_id!r} / {signer_id!r}")
         clip_id = new_clip_id()
@@ -82,6 +83,8 @@ class DatasetStore:
             "aspect": float(aspect),
             "created": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }
+        if mirror is not None:
+            meta["zurdo"] = bool(mirror)  # con que mano hace las senas (ver features.mirror)
         path = folder / f"{clip_id}.npz"
         tmp = folder / f"{clip_id}.tmp.npz"
         np.savez_compressed(
@@ -138,6 +141,7 @@ class DatasetStore:
                 sign_id=ref.sign_id,
                 signer_id=ref.signer_id,
                 clip_id=ref.clip_id,
+                mirror=meta["zurdo"] if isinstance(meta.get("zurdo"), bool) else None,
             )
 
     def counts(self, signer_id=None):

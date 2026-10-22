@@ -67,8 +67,9 @@ def assign_slots(detections, previous=None):
     previous: FrameHands del frame anterior (para la continuidad).
 
     Arregla dos errores comunes de MediaPipe:
-      1. Dos manos con la misma etiqueta: la que esta mas a la derecha de la
-         imagen (ya volteada como espejo) es la derecha.
+      1. Dos manos con la misma etiqueta: cada una sigue en la posicion del
+         frame anterior; si no hay anterior, se usa la convencion observada de
+         MediaPipe ("Right" = la mano mas a la izquierda de la imagen en espejo).
       2. Una sola mano que cambia de etiqueta sin moverse: se queda donde estaba.
     """
     hands = empty_hands()
@@ -78,9 +79,20 @@ def assign_slots(detections, previous=None):
     if len(detections) >= 2:
         a, b = detections[0], detections[1]
         if a[0] == b[0]:
-            # Misma etiqueta: decidimos por posicion horizontal de la muneca
-            a, b = sorted((a, b), key=lambda d: d[1][0, 0])
-            slots = [(LEFT, a), (RIGHT, b)]
+            # Misma etiqueta. Si en el frame anterior habia dos manos, cada una se
+            # queda en la posicion de la mas cercana. Si no, decidimos por la
+            # posicion horizontal con la convencion que de verdad da MediaPipe en
+            # nuestras imagenes (ya en espejo): la etiqueta "Right" cae en la mano
+            # que se ve MAS A LA IZQUIERDA de la imagen (medido en 2025 clips).
+            if previous is not None and previous.present.all():
+                d_straight = (np.linalg.norm(previous.image[LEFT, 0, :2] - a[1][0, :2])
+                              + np.linalg.norm(previous.image[RIGHT, 0, :2] - b[1][0, :2]))
+                d_swapped = (np.linalg.norm(previous.image[LEFT, 0, :2] - b[1][0, :2])
+                             + np.linalg.norm(previous.image[RIGHT, 0, :2] - a[1][0, :2]))
+                slots = [(LEFT, a), (RIGHT, b)] if d_straight <= d_swapped else [(LEFT, b), (RIGHT, a)]
+            else:
+                a, b = sorted((a, b), key=lambda d: d[1][0, 0])
+                slots = [(RIGHT, a), (LEFT, b)]
         else:
             slots = [(RIGHT if d[0] == "Right" else LEFT, d) for d in (a, b)]
     else:

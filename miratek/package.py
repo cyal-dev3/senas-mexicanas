@@ -29,6 +29,9 @@ ANDROID_MEMBER = "modelo/modelo_android.json"  # el mismo modelo, para el celula
 LOG_MEMBER = "diagnostico/miratek.log"
 _CLIP_RE = re.compile(r"^clips/([a-z0-9_-]{1,64})/([a-z0-9_-]{1,64})/([a-z0-9_-]{1,64})\.npz$")
 MAX_UNCOMPRESSED = 2 * 1024 ** 3  # 2 GB: proteccion contra archivos maliciosos
+MAX_MANIFEST = 1024 ** 2          # y topes por archivo (un clip pesa ~100 KB, un modelo ~2 MB)
+MAX_CLIP = 32 * 1024 ** 2
+MAX_MODEL = 50 * 1024 ** 2
 MIN_FRAMES = 8                    # igual que al grabar
 
 
@@ -39,7 +42,8 @@ class PackageError(Exception):
 @dataclass
 class ImportResult:
     added: int = 0
-    skipped: int = 0
+    skipped: int = 0    # ya las teniamos
+    invalid: int = 0    # no se pudieron leer (danadas o de otro formato)
     signers: dict = field(default_factory=dict)
     model_path: Path | None = None
     manifest: dict = field(default_factory=dict)
@@ -94,8 +98,12 @@ def export_package(store, dest_dir, author_name, model_path=None, log_path=None,
 def read_manifest(zip_path):
     try:
         with zipfile.ZipFile(zip_path) as zf:
-            return json.loads(zf.read(MANIFEST).decode("utf-8"))
-    except (zipfile.BadZipFile, KeyError, ValueError, OSError) as exc:
+            info = zf.getinfo(MANIFEST)
+            if info.file_size > MAX_MANIFEST:
+                raise PackageError("Este archivo no es un paquete de Mira&Tek.")
+            with zf.open(info) as f:
+                return json.loads(f.read(MAX_MANIFEST).decode("utf-8"))
+    except (zipfile.BadZipFile, zlib.error, EOFError, KeyError, ValueError, OSError) as exc:
         raise PackageError("Este archivo no es un paquete de Mira&Tek.") from exc
 
 
@@ -139,9 +147,12 @@ def _copy_members(store, zip_path, models_dir, result):
                 if target.exists():
                     result.skipped += 1
                     continue
-                data = zf.read(info)
+                if info.file_size > MAX_CLIP:
+                    result.invalid += 1
+                    continue
+                data = _read_member(zf, info, MAX_CLIP)
                 if not _valid_clip(data):
-                    result.skipped += 1
+                    result.invalid += 1
                     continue
                 target.parent.mkdir(parents=True, exist_ok=True)
                 tmp = target.with_name(f"{clip_id}.tmp.npz")
@@ -149,13 +160,22 @@ def _copy_members(store, zip_path, models_dir, result):
                 tmp.replace(target)
                 result.added += 1
                 result.signers[signer_id] = result.signers.get(signer_id, 0) + 1
-            elif info.filename == MODEL_MEMBER:
+            elif info.filename == MODEL_MEMBER and info.file_size <= MAX_MODEL:
                 models_dir = Path(models_dir)
                 models_dir.mkdir(parents=True, exist_ok=True)
                 target = models_dir / f"recibido_{time.strftime('%Y%m%d_%H%M%S')}.npz"
-                target.write_bytes(zf.read(info))
+                target.write_bytes(_read_member(zf, info, MAX_MODEL))
                 result.model_path = target
             # Cualquier otro archivo se ignora (no extraemos nada inesperado)
+
+
+def _read_member(zf, info, limit):
+    """Lee un archivo del zip sin pasar de 'limit' bytes aunque el encabezado mienta."""
+    with zf.open(info) as f:
+        data = f.read(limit + 1)
+    if len(data) > limit:
+        raise PackageError("El archivo es demasiado grande.")
+    return data
 
 
 def _valid_clip(data):

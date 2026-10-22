@@ -6,4 +6,4 @@ Paquete principal de la app de escritorio. Todo corre en la computadora,
 sin internet ni servidores.
 """
 
-__version__ = "2.0.0"
+__version__ = "2.2.0"
