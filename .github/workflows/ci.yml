@@ -34,7 +34,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Pruebas unitarias y de paridad
         working-directory: android
-        run: ./gradlew :core:testDebugUnitTest :app:testDebugUnitTest :trainer:testDebugUnitTest --console=plain
+        run: chmod +x gradlew && ./gradlew :core:testDebugUnitTest :app:testDebugUnitTest :trainer:testDebugUnitTest --console=plain
       - name: Compilar las dos APK (debug)
         working-directory: android
         run: ./gradlew :app:assembleDebug :trainer:assembleDebug --console=plain
