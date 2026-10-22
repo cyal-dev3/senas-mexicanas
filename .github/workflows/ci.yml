@@ -27,7 +27,10 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - uses: android-actions/setup-android@v3
+      # El runner ya trae el SDK de Android; solo hay que aceptar las licencias para que
+      # Gradle descargue lo que falte (platform 35, build-tools 35.0.0).
+      - name: Licencias del SDK de Android
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
       - uses: gradle/actions/setup-gradle@v4
       - name: Pruebas unitarias y de paridad
         working-directory: android
