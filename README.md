@@ -134,6 +134,7 @@ python -m venv .venv
 | Capturas de pantalla de la PC | `.venv\Scripts\python tools\screenshots.py capturas` |
 | Capturas de pantalla de Android (sin celular) | `cd android` y `gradlew recordPaparazziDebug` |
 | Regenerar íconos desde `assets/logo.png` | `.venv\Scripts\python tools\make_assets.py` |
+| Sumar personas de datos públicos (abecedario) | `.venv\Scripts\python tools\import_public.py datos_publicos` |
 
 En GitHub, cada `push` corre las pruebas de Python y de Android (`.github/workflows/ci.yml`).
 
@@ -149,11 +150,12 @@ y `package.py` en `android/trainer/.../train` y `.../data`. Si cambias una, camb
 ### Cómo reconoce las señas
 
 1. **MediaPipe** encuentra 21 puntos por mano, en la PC y en el celular.
-2. Una ventana de ~2 segundos se convierte en 728 números: la forma 3D de la mano (relativa a la muñeca y
-   al tamaño de la palma), la trayectoria del movimiento y la posición. Si la seña la hace la mano
-   izquierda, se refleja como espejo, así funciona para personas zurdas y diestras.
+2. Una ventana de ~2 segundos se convierte en 1488 números: la forma 3D de la mano (relativa a la muñeca y
+   al tamaño de la palma), esa misma forma medida en el «marco de la palma» y con distancias entre dedos
+   (no cambia si giras la mano o la cámara), la trayectoria del movimiento y la posición. Si la seña la
+   hace la mano izquierda, se refleja como espejo, así funciona para personas zurdas y diestras.
 3. Una red neuronal pequeña (MLP escrita a mano, en NumPy y en Kotlin) da la probabilidad de cada seña.
-   Al entrenar se generan variaciones de cada grabación (más cerca o lejos, giro, velocidad, frames
+   Al entrenar se generan variaciones de cada grabación (más cerca o lejos, giro en 3D, velocidad, frames
    perdidos y ventanas que empiezan con la cola de otra seña, como pasa en vivo). La confianza se calibra
    con el examen de personas nuevas, para que «80 %» signifique de verdad 80 % con gente que no grabó.
 4. En vivo, las probabilidades se suavizan y una seña solo se confirma si gana varias veces seguidas.
@@ -171,6 +173,19 @@ assets/                 logo, íconos, el detector de manos de MediaPipe e instr
 tests/                  pruebas de Python
 tools/                  construir .exe/.apk, íconos, capturas y datos de paridad
 ```
+
+### Datos públicos
+
+Para que el abecedario no dependa de una sola persona, `tools/import_public.py` convierte dos conjuntos
+públicos en grabaciones normales (solo puntos de la mano), con una «persona» por participante:
+
+- *Mexican Sign Language Alphabet (static signs only)*, <https://doi.org/10.5281/zenodo.10067509>
+- *Mexican Sign Language Alphabet (dynamic signs only)*, Navarrete-López y López-Nava (CICESE),
+  <https://doi.org/10.5281/zenodo.14689869>
+
+Ambos tienen licencia CC BY 4.0: si se distribuye un modelo entrenado con ellos hay que dar este crédito.
+Se descargan y descomprimen en `datos_publicos/` (no se sube a GitHub: son varios GB) y luego se corre la
+herramienta; las personas importadas aparecen como «Zenodo …» y se pueden borrar desde la app.
 
 ## Límites
 

@@ -3,7 +3,7 @@ De frames a numeros: la parte mas importante para que el modelo funcione
 con cualquier persona.
 
 Una sena dura mas o menos 1-2 segundos. Tomamos una VENTANA de frames
-(ej: los ultimos 2 segundos) y la convertimos en un vector de 728 numeros.
+(ej: los ultimos 2 segundos) y la convertimos en un vector de 1488 numeros.
 Esta misma funcion se usa al ENTRENAR y al RECONOCER EN VIVO, asi nunca
 quedan desincronizados.
 
@@ -24,13 +24,22 @@ import numpy as np
 
 from .hands import LEFT, RIGHT
 
-FEATURE_VERSION = 1
+FEATURE_VERSION = 2
 N_STEPS = 16        # Pasos de tiempo dentro de la ventana
 N_SEGMENTS = 4      # Para promedios por "etapa" de la sena (inicio ... fin)
 MAX_GAP = 0.25      # Huecos sin mano mas cortos que esto se rellenan
 PALM = [5, 9, 13, 17]
-FEATURE_SIZE = 2 * N_SEGMENTS * 60 + 2 * 60 + N_STEPS * 4 + N_STEPS * 2 + 2 * N_SEGMENTS * 2 \
+TIPS = [4, 8, 12, 16, 20]   # Puntas de los dedos (pulgar ... menique)
+MCPS = [2, 5, 9, 13, 17]    # Base de cada dedo
+TIP_PAIRS = [(a, b) for i, a in enumerate(TIPS) for b in TIPS[i + 1:]]
+THUMB_TO = [5, 6, 9, 10, 13, 14, 17, 18]  # El pulgar contra la base y el nudillo de cada dedo
+# Por mano y por paso: forma en el marco de la palma (60), distancias entre puntas (10),
+# punta-muneca (5), punta-base (5), pulgar-dedos (8), cruce indice/medio (1) y hacia
+# donde apunta la palma (6).
+HAND_GEOMETRY = 60 + len(TIP_PAIRS) + 5 + 5 + len(THUMB_TO) + 1 + 6
+BASE_SIZE = 2 * N_SEGMENTS * 60 + 2 * 60 + N_STEPS * 4 + N_STEPS * 2 + 2 * N_SEGMENTS * 2 \
     + N_SEGMENTS * 2 + 2 * N_SEGMENTS
+FEATURE_SIZE = BASE_SIZE + N_SEGMENTS * 2 * HAND_GEOMETRY
 DEFAULT_PALM = 0.12  # Tamano de palma de respaldo (en alturas de imagen)
 
 
@@ -112,8 +121,39 @@ def _segment_mean(a):
     return _nanmean(seg, axis=1)
 
 
+def _unit(v):
+    """Vector de largo 1 (si mide casi cero se queda como esta)."""
+    n = np.linalg.norm(v, axis=-1, keepdims=True)
+    return v / np.where(n > 1e-9, n, 1.0)
+
+
+def _hand_geometry(wld, palm_w):
+    """Forma de la mano SIN importar hacia donde este girada. (N_STEPS, 2, HAND_GEOMETRY).
+
+    La forma relativa a la muneca cambia si giras la mano o la camara: una R
+    inclinada se parece a una U. Aqui se mide la mano en el "marco de la palma"
+    (un eje va de la muneca al dedo medio, otro cruza la palma y el tercero sale
+    de ella) y con distancias entre dedos, que no cambian al girar. Hacia donde
+    apunta la palma se guarda aparte, porque en algunas senas si importa.
+    """
+    p = (wld - wld[:, :, :1, :]) / palm_w[None, :, None, None]     # (16, 2, 21, 3) en "palmas"
+    ey = _unit(p[:, :, 9])                                          # muneca -> base del dedo medio
+    ez = _unit(np.cross(p[:, :, 5] - p[:, :, 17], ey))              # sale de la palma
+    ex = np.cross(ey, ez)                                           # cruza la palma
+    frame = np.stack([ex, ey, ez], axis=-2)                         # (16, 2, 3, 3)
+    canon = np.einsum("shij,shkj->shki", frame, p[:, :, 1:])        # (16, 2, 20, 3)
+    tip_pairs = np.stack([np.linalg.norm(p[:, :, a] - p[:, :, b], axis=-1) for a, b in TIP_PAIRS], axis=-1)
+    tip_wrist = np.linalg.norm(p[:, :, TIPS], axis=-1)
+    tip_base = np.linalg.norm(p[:, :, TIPS] - p[:, :, MCPS], axis=-1)
+    thumb = np.stack([np.linalg.norm(p[:, :, 4] - p[:, :, j], axis=-1) for j in THUMB_TO], axis=-1)
+    # Cruce del indice y el medio (distingue R, U y V): de que lado queda una punta de la otra
+    cross = (canon[:, :, 7, 0] - canon[:, :, 11, 0])[..., None]
+    return np.concatenate([canon.reshape(N_STEPS, 2, 60), tip_pairs, tip_wrist, tip_base, thumb, cross,
+                           ey, ez], axis=-1)
+
+
 def features_from_resampled(img, wld, present, aspect, mirror=None):
-    """Calcula el vector de 728 numeros a partir de la ventana remuestreada.
+    """Calcula el vector de caracteristicas a partir de la ventana remuestreada.
 
     mirror: True si la persona hace las senas con la mano izquierda (se refleja
     como espejo para que la mano dominante quede a la derecha), False si con la
@@ -162,9 +202,11 @@ def features_from_resampled(img, wld, present, aspect, mirror=None):
     inter = _segment_mean((wrist[:, RIGHT] - wrist[:, LEFT]) / scale)      # (4, 2)
     presence = _segment_mean(present.astype(np.float64)).T                 # (2, 4)
 
+    geometry = _segment_mean(_hand_geometry(wld, palm_w))           # (4, 2, 95)
+
     vec = np.concatenate([
         shape_seg.ravel(), shape_speed.ravel(), motion.ravel(), depth.ravel(),
-        absolute.ravel(), inter.ravel(), presence.ravel(),
+        absolute.ravel(), inter.ravel(), presence.ravel(), geometry.ravel(),
     ])
     vec = np.nan_to_num(vec, nan=0.0, posinf=0.0, neginf=0.0)
     return np.clip(vec, -10.0, 10.0).astype(np.float32)

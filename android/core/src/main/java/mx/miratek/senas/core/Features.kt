@@ -9,7 +9,7 @@ import kotlin.math.sqrt
 /**
  * De frames a numeros: copia EXACTA de miratek/features.py.
  *
- * Una ventana de ~2 segundos de manos se convierte en un vector de 728 numeros.
+ * Una ventana de ~2 segundos de manos se convierte en un vector de 1488 numeros.
  * Si cambian algo aqui, cambienlo tambien en Python (y al reves): las pruebas
  * de paridad (FeaturesParityTest) comparan ambos resultados.
  *
@@ -17,12 +17,20 @@ import kotlin.math.sqrt
  * Indice = mano * 63 + punto * 3 + coordenada. NaN si la mano no aparece.
  */
 object Features {
-    const val FEATURE_VERSION = 1
+    const val FEATURE_VERSION = 2
     const val N_STEPS = 16
     const val N_SEGMENTS = 4
     const val MAX_GAP = 0.25
-    const val FEATURE_SIZE = 2 * N_SEGMENTS * 60 + 2 * 60 + N_STEPS * 4 + N_STEPS * 2 +
+    private val TIPS = intArrayOf(4, 8, 12, 16, 20)   // puntas de los dedos (pulgar ... menique)
+    private val MCPS = intArrayOf(2, 5, 9, 13, 17)    // base de cada dedo
+    private val THUMB_TO = intArrayOf(5, 6, 9, 10, 13, 14, 17, 18)
+    // Por mano y por paso: forma en el marco de la palma (60), distancias entre puntas (10),
+    // punta-muneca (5), punta-base (5), pulgar-dedos (8), cruce indice/medio (1) y hacia
+    // donde apunta la palma (6).
+    const val HAND_GEOMETRY = 60 + 10 + 5 + 5 + 8 + 1 + 6
+    const val BASE_SIZE = 2 * N_SEGMENTS * 60 + 2 * 60 + N_STEPS * 4 + N_STEPS * 2 +
         2 * N_SEGMENTS * 2 + N_SEGMENTS * 2 + 2 * N_SEGMENTS
+    const val FEATURE_SIZE = BASE_SIZE + N_SEGMENTS * 2 * HAND_GEOMETRY
     private const val DEFAULT_PALM = 0.12
     private val PALM = intArrayOf(5, 9, 13, 17)
     const val LEFT = 0
@@ -153,6 +161,43 @@ object Features {
         return s / PALM.size
     }
 
+    private fun unit(v: DoubleArray): DoubleArray {
+        val n = sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
+        return if (n > 1e-9) doubleArrayOf(v[0] / n, v[1] / n, v[2] / n) else v
+    }
+
+    private fun cross(a: DoubleArray, b: DoubleArray) = doubleArrayOf(
+        a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0],
+    )
+
+    private fun dot(a: DoubleArray, b: DoubleArray) = a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+    /**
+     * Forma de UNA mano en UN paso sin importar hacia donde este girada (como
+     * _hand_geometry en Python). Se mide en el "marco de la palma": un eje va de
+     * la muneca al dedo medio, otro cruza la palma y el tercero sale de ella.
+     */
+    private fun handGeometry(points: Array<DoubleArray>, palmW: Double): DoubleArray {
+        val p = Array(21) { k -> DoubleArray(3) { c -> (points[k][c] - points[0][c]) / palmW } }
+        val ey = unit(p[9])
+        val ez = unit(cross(DoubleArray(3) { c -> p[5][c] - p[17][c] }, ey))
+        val ex = cross(ey, ez)
+        val out = DoubleArray(HAND_GEOMETRY)
+        var o = 0
+        for (k in 1..20) {
+            out[o++] = dot(ex, p[k]); out[o++] = dot(ey, p[k]); out[o++] = dot(ez, p[k])
+        }
+        for (i in TIPS.indices) for (j in i + 1 until TIPS.size) out[o++] = dist(p[TIPS[i]], p[TIPS[j]], 3)
+        for (tip in TIPS) out[o++] = dist(p[tip], p[0], 3)
+        for (i in TIPS.indices) out[o++] = dist(p[TIPS[i]], p[MCPS[i]], 3)
+        for (j in THUMB_TO) out[o++] = dist(p[4], p[j], 3)
+        // Cruce del indice y el medio (distingue R, U y V)
+        out[o++] = dot(ex, p[8]) - dot(ex, p[12])
+        for (c in 0 until 3) out[o++] = ey[c]
+        for (c in 0 until 3) out[o++] = ez[c]
+        return out
+    }
+
     /** Promedio (ignorando NaN) de cada etapa de 4 pasos. */
     private fun segmentMean(values: (step: Int) -> Double): DoubleArray {
         val per = N_STEPS / N_SEGMENTS
@@ -242,6 +287,13 @@ object Features {
         for (s in 0..1) {
             val seg = segmentMean { g -> if (present[g][s]) 1.0 else 0.0 }
             for (v in seg) out.add(v)
+        }
+
+        // --- Forma en el marco de la palma (no cambia al girar la mano) ---
+        val geometry = Array(N_STEPS) { g -> Array(2) { s -> handGeometry(wld[g][s], palmW[s]) } }
+        val per = N_STEPS / N_SEGMENTS
+        for (seg in 0 until N_SEGMENTS) for (s in 0..1) for (k in 0 until HAND_GEOMETRY) {
+            out.add(nanMean(DoubleArray(per) { i -> geometry[seg * per + i][s][k] }))
         }
 
         check(out.size == FEATURE_SIZE) { "tamano ${out.size}" }

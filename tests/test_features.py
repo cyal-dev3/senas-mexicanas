@@ -100,3 +100,16 @@ def test_explicit_mirror_beats_guessing_with_resting_hand():
     left_guess = window_features(l_img, l_wld, t, 4 / 3, 2.0)
     assert np.corrcoef(right, left_known)[0, 1] > 0.99
     assert np.corrcoef(right, left_guess)[0, 1] < 0.9
+
+
+def test_hand_shape_ignores_rotation():
+    """La forma en el marco de la palma no cambia al girar la mano; hacia donde apunta, si."""
+    from miratek.augment import hand_rotation
+    from miratek.features import BASE_SIZE, HAND_GEOMETRY
+    image, world, t = _clip()
+    turned = world @ hand_rotation(0.6, 0.2, -0.2).T.astype(np.float32)
+    a = window_features(image, world, t, 4 / 3, 2.0, mirror=False)[BASE_SIZE:].reshape(-1, HAND_GEOMETRY)
+    b = window_features(image, turned, t, 4 / 3, 2.0, mirror=False)[BASE_SIZE:].reshape(-1, HAND_GEOMETRY)
+    assert np.abs(a[:, :-6]).max() > 0.1
+    assert np.allclose(a[:, :-6], b[:, :-6], atol=1e-3)
+    assert not np.allclose(a[:, -6:], b[:, -6:], atol=0.05)

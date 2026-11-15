@@ -59,7 +59,10 @@ def main(out=DEFAULT_OUT):
         by_sign.setdefault(ref.sign_id, []).append(ref)
     signs = {}
     for sign_id, refs in sorted(by_sign.items()):
-        clips = [store.load(r) for r in refs]
+        # Las animaciones salen de las grabaciones del equipo; las de datos publicos
+        # (tools/import_public.py) solo se usan si nadie del equipo grabo esa sena
+        own = [r for r in refs if not r.signer_id.startswith("zenodo-")]
+        clips = [store.load(r) for r in (own or refs)]
         clips = [c for c in clips if len(c.t) >= 8]
         if not clips:
             continue

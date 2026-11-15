@@ -2,7 +2,7 @@
 Red neuronal MLP (Perceptron Multicapa) escrita solo con NumPy.
 
 Es la misma idea que el modelo original en PyTorch:
-    entrada (728 numeros) -> 256 neuronas -> 128 neuronas -> una salida por sena
+    entrada (1488 numeros) -> 256 neuronas -> 128 neuronas -> una salida por sena
 
 La escribimos con NumPy para que la app sea ligera: PyTorch pesa cientos de
 megas y el .exe tardaria mucho en abrir. Para una red de este tamano, NumPy

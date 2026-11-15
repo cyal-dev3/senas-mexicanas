@@ -208,3 +208,6 @@ MiraTek_*.zip
 *.apk
 # Animaciones de "Aprender": se generan con tools/make_learn_assets.py desde las grabaciones
 assets/learn_clips.json
+
+# Datos publicos descargados (Zenodo, CC BY 4.0): pesan varios GB
+datos_publicos/

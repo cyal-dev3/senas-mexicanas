@@ -6,7 +6,7 @@ A diferencia de "ruido en cada numero", aqui simulamos cosas que de verdad
 pasan frente a una camara:
   - La persona esta mas cerca o mas lejos (escala).
   - Esta mas a la izquierda, derecha, arriba o abajo (traslacion).
-  - La camara esta un poco chueca (giro).
+  - La camara o el brazo estan girados, o la mano inclinada (giro en 3D).
   - Hace la sena mas rapido o mas lento (velocidad).
   - Empieza la sena un poco antes o despues (ventana corrida).
   - MediaPipe pierde la mano en algunos frames.
@@ -19,6 +19,21 @@ Las variaciones se aplican SOLO al entrenar, nunca a los datos de examen.
 import numpy as np
 
 from .features import _nanmean
+
+
+MAX_ROLL = 0.55  # Giro de la camara o del brazo: ~31 grados (medido: con ~8 fallaba al girar 35)
+MAX_TILT = 0.25  # Inclinacion de la mano fuera del plano de la imagen: ~14 grados
+
+
+def hand_rotation(roll, tilt_x, tilt_y):
+    """Matriz 3x3: gira 'roll' en el plano de la imagen y luego inclina en x e y."""
+    c, s = np.cos(roll), np.sin(roll)
+    cx, sx = np.cos(tilt_x), np.sin(tilt_x)
+    cy, sy = np.cos(tilt_y), np.sin(tilt_y)
+    rz = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
+    rx = np.array([[1.0, 0.0, 0.0], [0.0, cx, -sx], [0.0, sx, cx]])
+    ry = np.array([[cy, 0.0, sy], [0.0, 1.0, 0.0], [-sy, 0.0, cy]])
+    return rx @ ry @ rz
 
 
 def augment_clip(image, world, t, aspect, rng):
@@ -38,7 +53,7 @@ def augment_clip(image, world, t, aspect, rng):
     cy = _nanmean(y[:, :, 0].ravel(), axis=0)
     if not np.isfinite(cx):
         cx, cy = aspect / 2, 0.5
-    theta = rng.uniform(-0.14, 0.14)  # ~8 grados
+    theta = rng.uniform(-MAX_ROLL, MAX_ROLL)
     scale = rng.uniform(0.82, 1.18)  # cerca o lejos (tambien celulares)
     dx, dy = rng.uniform(-0.09, 0.09, size=2)
     c, s = np.cos(theta), np.sin(theta)
@@ -46,9 +61,10 @@ def augment_clip(image, world, t, aspect, rng):
     image[..., 0] = ((c * xc - s * yc) * scale + cx + dx) / aspect
     image[..., 1] = (s * xc + c * yc) * scale + cy + dy
     image[..., 2] *= scale
-    wx, wy = world[..., 0].copy(), world[..., 1].copy()
-    world[..., 0] = c * wx - s * wy
-    world[..., 1] = s * wx + c * wy
+    # La mano en 3D gira igual que la imagen y ademas se inclina un poco hacia
+    # adelante/atras y a los lados (nadie pone la mano exactamente igual)
+    tilt_x, tilt_y = rng.uniform(-MAX_TILT, MAX_TILT, size=2)
+    world[:] = world @ hand_rotation(theta, tilt_x, tilt_y).T.astype(np.float32)
 
     # Temblor pequeno (como el ruido normal de MediaPipe)
     image[..., :2] += rng.normal(0, 0.002, image[..., :2].shape).astype(np.float32)

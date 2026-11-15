@@ -17,6 +17,21 @@ class Augmented(val image: List<FloatArray>, val world: List<FloatArray>, val ti
  */
 object Augment {
     private const val FRAME = 126
+    const val MAX_ROLL = 0.55  // giro de la camara o del brazo: ~31 grados
+    const val MAX_TILT = 0.25  // inclinacion de la mano fuera del plano de la imagen: ~14 grados
+
+    /** Matriz 3x3 (por filas): gira 'roll' en el plano de la imagen y luego inclina en x e y. */
+    fun handRotation(roll: Double, tiltX: Double, tiltY: Double): DoubleArray {
+        val c = cos(roll); val s = sin(roll)
+        val cx = cos(tiltX); val sx = sin(tiltX)
+        val cy = cos(tiltY); val sy = sin(tiltY)
+        // rx * ry * rz, igual que hand_rotation en Python
+        return doubleArrayOf(
+            cy * c, -cy * s, sy,
+            sx * sy * c + cx * s, -sx * sy * s + cx * c, -sx * cy,
+            -cx * sy * c + sx * s, cx * sy * s + sx * c, cx * cy,
+        )
+    }
 
     private fun Random.uniform(lo: Double, hi: Double) = lo + (hi - lo) * nextDouble()
 
@@ -42,13 +57,14 @@ object Augment {
         val cx = if (count > 0) sx / count else aspect / 2
         val cy = if (count > 0) sy / count else 0.5
 
-        // Camara: escala, giro (~8 grados) y traslacion
-        val theta = rng.uniform(-0.14, 0.14)
+        // Camara: escala, giro y traslacion. La mano en 3D gira igual y ademas se inclina un poco
+        val theta = rng.uniform(-MAX_ROLL, MAX_ROLL)
         val scale = rng.uniform(0.82, 1.18)
         val dx = rng.uniform(-0.09, 0.09)
         val dy = rng.uniform(-0.09, 0.09)
         val c = cos(theta)
         val s = sin(theta)
+        val r = handRotation(theta, rng.uniform(-MAX_TILT, MAX_TILT), rng.uniform(-MAX_TILT, MAX_TILT))
         val img = List(n) { FloatArray(FRAME) }
         val wld = List(n) { FloatArray(FRAME) }
         for (f in 0 until n) {
@@ -68,9 +84,10 @@ object Augment {
                 di[o + 2] = (src[o + 2] * scale).toFloat()
                 val wx = srw[o]
                 val wy = srw[o + 1]
-                dw[o] = (c * wx - s * wy + rng.nextGaussian() * 0.0015).toFloat()
-                dw[o + 1] = (s * wx + c * wy + rng.nextGaussian() * 0.0015).toFloat()
-                dw[o + 2] = (srw[o + 2] + rng.nextGaussian() * 0.0015).toFloat()
+                val wz = srw[o + 2]
+                dw[o] = (r[0] * wx + r[1] * wy + r[2] * wz + rng.nextGaussian() * 0.0015).toFloat()
+                dw[o + 1] = (r[3] * wx + r[4] * wy + r[5] * wz + rng.nextGaussian() * 0.0015).toFloat()
+                dw[o + 2] = (r[6] * wx + r[7] * wy + r[8] * wz + rng.nextGaussian() * 0.0015).toFloat()
             }
             // Perdidas de deteccion en algunos frames
             for (hand in 0..1) if (rng.nextDouble() < 0.05) {

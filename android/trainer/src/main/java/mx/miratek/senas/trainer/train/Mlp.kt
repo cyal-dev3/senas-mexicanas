@@ -38,7 +38,7 @@ object Par {
 
 /**
  * Red neuronal MLP escrita a mano, copia de miratek/mlp.py:
- *     entrada (728 numeros) -> 256 neuronas -> 128 neuronas -> una salida por sena
+ *     entrada (1488 numeros) -> 256 neuronas -> 128 neuronas -> una salida por sena
  * Los pesos van en arreglos planos [entrada * salida], fila por fila (igual que
  * los lee SignModel en la app de traduccion).
  */

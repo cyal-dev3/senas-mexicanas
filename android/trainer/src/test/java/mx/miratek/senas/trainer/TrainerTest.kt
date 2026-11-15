@@ -110,7 +110,7 @@ class TrainerTest {
         assertEquals(Features.FEATURE_SIZE, w0.shape[0])
         assertEquals(48, w0.shape[1])
         val meta = JSONObject((npz["meta"] as Npy.Text).value)
-        assertEquals(1, meta.getInt("feature_version"))
+        assertEquals(Features.FEATURE_VERSION, meta.getInt("feature_version"))
         assertEquals(5, meta.getJSONArray("classes").length())
         assertEquals("personas", meta.getJSONObject("report").getString("eval_mode"))
 
